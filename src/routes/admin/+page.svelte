@@ -12,6 +12,9 @@
   let loading = true;
   let loadingDetails = false;
   let loadingImages = false;
+  let loadingMore = false;
+  let hasMoreImages = false;
+  let imageOffset = 0;
   let searchQuery = '';
   let imageModal: ImageResource | null = null;
 
@@ -53,6 +56,7 @@
     loadingImages = true;
     selectedApp = 'all';
     selectedTool = 'all';
+    imageOffset = 0;
 
     try {
       // Load user details
@@ -64,7 +68,7 @@
       availableTools = [...new Set(allImagesResult.images.map(img => img.tool))].sort();
       
       // Then load images with current filters
-      await loadImages(user.id, 'all', 'all');
+      await loadImages(user.id, 'all', 'all', false);
     } catch (error) {
       console.error('Error loading user details:', error);
     } finally {
@@ -72,37 +76,63 @@
     }
   }
 
-  async function loadImages(userId: string, app: string, tool: string) {
+  async function loadImages(userId: string, app: string, tool: string, append: boolean = false) {
     if (!userId) return;
     
-    loadingImages = true;
+    if (append) {
+      loadingMore = true;
+    } else {
+      loadingImages = true;
+      imageOffset = 0;
+      userImages = [];
+    }
+    
     try {
       const result = await getUserImages(userId, {
         app: app === 'all' ? undefined : app,
         tool: tool === 'all' ? undefined : tool,
-        limit: 100
+        limit: 50,
+        offset: imageOffset
       });
-      userImages = result.images;
+      
+      if (append) {
+        userImages = [...userImages, ...result.images];
+      } else {
+        userImages = result.images;
+      }
+      
+      hasMoreImages = result.has_more;
+      imageOffset += result.images.length;
+      
       // Don't recalculate availableTools - keep all tools visible
     } catch (error) {
       console.error('Error loading images:', error);
-      userImages = [];
+      if (!append) {
+        userImages = [];
+      }
     } finally {
       loadingImages = false;
+      loadingMore = false;
     }
   }
 
   function handleAppFilter(app: string) {
     selectedApp = app;
     if (selectedUser) {
-      loadImages(selectedUser.id, app, selectedTool);
+      loadImages(selectedUser.id, app, selectedTool, false);
     }
   }
 
   function handleToolFilter(tool: string) {
     selectedTool = tool;
     if (selectedUser) {
-      loadImages(selectedUser.id, selectedApp, tool);
+      loadImages(selectedUser.id, selectedApp, tool, false);
+    }
+  }
+
+  function handleLoadMore() {
+    if (selectedUser && !loadingMore) {
+      loadImages(selectedUser.id, selectedApp, selectedTool, true);
     }
   }
 
@@ -312,6 +342,18 @@
                 </button>
               {/each}
             </div>
+            
+            {#if hasMoreImages}
+              <div class="load-more-container">
+                <button 
+                  class="btn btn-secondary load-more-btn" 
+                  on:click={handleLoadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Loading...' : 'Load More Images'}
+                </button>
+              </div>
+            {/if}
           {/if}
         </section>
       </div>
@@ -619,6 +661,16 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: 12px;
+  }
+
+  .load-more-container {
+    margin-top: 24px;
+    text-align: center;
+  }
+
+  .load-more-btn {
+    padding: 12px 32px;
+    font-size: 14px;
   }
 
   .image-card {
