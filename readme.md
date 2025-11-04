@@ -22,7 +22,7 @@ npm install
 Create a `.env` file in the root directory:
 
 ```env
-VITE_BACKEND_URL=http://localhost:3001
+VITE_API_URL=http://localhost:3001
 ```
 
 That's it! All data flows through the `controlai-server`, so no Supabase configuration is needed on the client.
