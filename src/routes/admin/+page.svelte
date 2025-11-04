@@ -1,0 +1,707 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { getAllUsers, getUserDetails, getUserImages, AVAILABLE_APPS, type User, type UserDetails, type ImageResource } from '$lib/api/client';
+
+  let users: User[] = [];
+  let selectedUser: User | null = null;
+  let userDetails: UserDetails | null = null;
+  let userImages: ImageResource[] = [];
+  let selectedApp: string = 'all';
+  let loading = true;
+  let loadingDetails = false;
+  let loadingImages = false;
+  let searchQuery = '';
+  let imageModal: ImageResource | null = null;
+
+  $: filteredUsers = users.filter(user => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      user.id.toLowerCase().includes(query) ||
+      user.email?.toLowerCase().includes(query) ||
+      user.full_name?.toLowerCase().includes(query)
+    );
+  });
+
+  onMount(async () => {
+    await loadUsers();
+  });
+
+  async function loadUsers() {
+    loading = true;
+    try {
+      const data = await getAllUsers();
+      users = data;
+    } catch (error) {
+      console.error('Error loading users:', error);
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function selectUser(user: User) {
+    selectedUser = user;
+    loadingDetails = true;
+    loadingImages = true;
+    selectedApp = 'all';
+
+    try {
+      // Load user details
+      const details = await getUserDetails(user.id);
+      userDetails = details;
+      
+      // Load user images
+      await loadImages(user.id, 'all');
+    } catch (error) {
+      console.error('Error loading user details:', error);
+    } finally {
+      loadingDetails = false;
+    }
+  }
+
+  async function loadImages(userId: string, app: string) {
+    if (!userId) return;
+    
+    loadingImages = true;
+    try {
+      const result = await getUserImages(userId, {
+        app: app === 'all' ? undefined : app,
+        limit: 100
+      });
+      userImages = result.images;
+    } catch (error) {
+      console.error('Error loading images:', error);
+      userImages = [];
+    } finally {
+      loadingImages = false;
+    }
+  }
+
+  function handleAppFilter(app: string) {
+    selectedApp = app;
+    if (selectedUser) {
+      loadImages(selectedUser.id, app);
+    }
+  }
+
+  function getAppName(appId: string): string {
+    return AVAILABLE_APPS.find(a => a.id === appId)?.name || appId;
+  }
+
+  function formatDate(date: string): string {
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function openImageModal(image: ImageResource) {
+    imageModal = image;
+  }
+
+  function closeImageModal() {
+    imageModal = null;
+  }
+</script>
+
+<div class="admin-dashboard">
+  <!-- Left Sidebar - Users List -->
+  <div class="users-sidebar">
+      <div class="sidebar-header">
+      <h2>Users ({users.length})</h2>
+      <input
+        type="text"
+        class="input search-input"
+        placeholder="Search users..."
+        bind:value={searchQuery}
+      />
+    </div>
+
+    <div class="users-list">
+      {#if loading}
+        <div class="loading-state">
+          <div class="loading-spinner-small"></div>
+          <p>Loading users...</p>
+        </div>
+      {:else if filteredUsers.length === 0}
+        <div class="empty-state">
+          <p>No users found</p>
+        </div>
+      {:else}
+        {#each filteredUsers as user}
+          <button
+            class="user-item"
+            class:active={selectedUser?.id === user.id}
+            on:click={() => selectUser(user)}
+          >
+            <div class="user-avatar">
+              {(user.full_name || user.email || '?')[0].toUpperCase()}
+            </div>
+            <div class="user-info">
+              <div class="user-name">{user.full_name || user.email || 'Unknown User'}</div>
+              <div class="user-meta">
+                <span class="user-apps">{user.apps.length} apps</span>
+              </div>
+            </div>
+          </button>
+        {/each}
+      {/if}
+    </div>
+  </div>
+
+  <!-- Right Panel - User Details -->
+  <div class="user-details-panel">
+    {#if !selectedUser}
+      <div class="empty-state-large">
+        <div class="empty-icon">👥</div>
+        <h3>Select a user</h3>
+        <p>Choose a user from the list to view their details and generated images</p>
+      </div>
+    {:else}
+      <div class="details-content">
+        <!-- User Info Section -->
+        <section class="details-section">
+          <h3>User Information</h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <label>User ID</label>
+              <div class="info-value code">{selectedUser.id}</div>
+            </div>
+            <div class="info-item">
+              <label>Email</label>
+              <div class="info-value">{selectedUser.email || 'N/A'}</div>
+            </div>
+            <div class="info-item">
+              <label>Full Name</label>
+              <div class="info-value">{selectedUser.full_name || 'N/A'}</div>
+            </div>
+            <div class="info-item">
+              <label>Registered</label>
+              <div class="info-value">{formatDate(selectedUser.created_at)}</div>
+            </div>
+            {#if userDetails?.latest_activity}
+              <div class="info-item">
+                <label>Last Activity</label>
+                <div class="info-value">{formatDate(userDetails.latest_activity)}</div>
+              </div>
+            {/if}
+          </div>
+        </section>
+
+        <!-- Apps Section -->
+        <section class="details-section">
+          <h3>Applications ({selectedUser.apps.length})</h3>
+          <div class="apps-grid">
+            {#each selectedUser.apps as app}
+              <div class="app-card">
+                <div class="app-header">
+                  <h4>{getAppName(app.app_id)}</h4>
+                  <span class="status-badge" class:admin={app.status === 'admin'} class:blocked={app.status === 'blocked'}>
+                    {app.status || 'active'}
+                  </span>
+                </div>
+                <div class="app-info">
+                  <div class="app-stat">
+                    <span class="stat-label">Credits</span>
+                    <span class="stat-value">{app.credits}</span>
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </section>
+
+        <!-- Images Section -->
+        <section class="details-section">
+          <div class="section-header">
+            <h3>Generated Images ({userImages.length})</h3>
+            <div class="app-filter">
+              <button
+                class="filter-btn"
+                class:active={selectedApp === 'all'}
+                on:click={() => handleAppFilter('all')}
+              >
+                All Apps
+              </button>
+              {#each AVAILABLE_APPS as app}
+                <button
+                  class="filter-btn"
+                  class:active={selectedApp === app.id}
+                  on:click={() => handleAppFilter(app.id)}
+                >
+                  {app.name}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          {#if loadingImages}
+            <div class="loading-state">
+              <div class="loading-spinner-small"></div>
+              <p>Loading images...</p>
+            </div>
+          {:else if userImages.length === 0}
+            <div class="empty-state">
+              <p>No images found</p>
+            </div>
+          {:else}
+            <div class="images-grid">
+              {#each userImages as image}
+                <button class="image-card" on:click={() => openImageModal(image)}>
+                  <img src={image.image_url} alt="Generated" loading="lazy" />
+                  <div class="image-overlay">
+                    <div class="image-info">
+                      <div class="image-tool">{image.tool}</div>
+                      <div class="image-date">{new Date(image.created_at).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      </div>
+    {/if}
+  </div>
+</div>
+
+<!-- Image Modal -->
+{#if imageModal}
+  <div class="modal-backdrop" on:click={closeImageModal}>
+    <div class="modal-content" on:click|stopPropagation>
+      <button class="modal-close" on:click={closeImageModal}>×</button>
+      <img src={imageModal.image_url} alt="Full size" />
+      <div class="modal-info">
+        <div><strong>Tool:</strong> {imageModal.tool}</div>
+        <div><strong>App:</strong> {getAppName(imageModal.app)}</div>
+        <div><strong>Batch:</strong> {imageModal.batch_name}</div>
+        <div><strong>Created:</strong> {formatDate(imageModal.created_at)}</div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .admin-dashboard {
+    display: flex;
+    height: calc(100vh - 73px);
+    overflow: hidden;
+  }
+
+  /* Users Sidebar */
+  .users-sidebar {
+    width: 350px;
+    background: white;
+    border-right: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .sidebar-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #1f2937;
+  }
+
+  .search-input {
+    font-size: 14px;
+  }
+
+  .users-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .user-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: none;
+    background: white;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    transition: background 0.2s;
+    text-align: left;
+  }
+
+  .user-item:hover {
+    background: #f9fafb;
+  }
+
+  .user-item.active {
+    background: #eff6ff;
+    border: 1px solid #3b82f6;
+  }
+
+  .user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .user-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .user-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .user-meta {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+
+  .user-apps {
+    font-weight: 500;
+  }
+
+  /* User Details Panel */
+  .user-details-panel {
+    flex: 1;
+    overflow-y: auto;
+    background: #f9fafb;
+  }
+
+  .details-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .details-section {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .details-section h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #1f2937;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .section-header h3 {
+    margin-bottom: 0;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+  }
+
+  .info-item label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b7280;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .info-value {
+    font-size: 14px;
+    color: #1f2937;
+  }
+
+  .info-value.code {
+    font-family: monospace;
+    font-size: 12px;
+    background: #f3f4f6;
+    padding: 8px;
+    border-radius: 4px;
+  }
+
+  .apps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+  }
+
+  .app-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    background: #f9fafb;
+  }
+
+  .app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .app-header h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .status-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-badge.admin {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .status-badge.blocked {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .app-info {
+    display: flex;
+    gap: 16px;
+  }
+
+  .app-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .app-filter {
+    display: flex;
+    gap: 8px;
+  }
+
+  .filter-btn {
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .filter-btn:hover {
+    background: #f9fafb;
+  }
+
+  .filter-btn.active {
+    background: #2563eb;
+    color: white;
+    border-color: #2563eb;
+  }
+
+  .images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  .image-card {
+    aspect-ratio: 1;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    border: none;
+    padding: 0;
+    background: #f3f4f6;
+  }
+
+  .image-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.2s;
+  }
+
+  .image-card:hover img {
+    transform: scale(1.05);
+  }
+
+  .image-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+    padding: 12px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .image-card:hover .image-overlay {
+    opacity: 1;
+  }
+
+  .image-info {
+    color: white;
+    font-size: 12px;
+  }
+
+  .image-tool {
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .image-date {
+    opacity: 0.9;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+
+  .modal-content {
+    position: relative;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: auto;
+  }
+
+  .modal-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    font-size: 30px;
+    line-height: 1;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .modal-close:hover {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  .modal-info {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    font-size: 14px;
+  }
+
+  /* Loading & Empty States */
+  .loading-state,
+  .empty-state {
+    padding: 40px;
+    text-align: center;
+    color: #6b7280;
+  }
+
+  .loading-spinner-small {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+
+  .empty-state-large {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 60px 20px;
+    color: #6b7280;
+  }
+
+  .empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+  }
+
+  .empty-state-large h3 {
+    font-size: 20px;
+    color: #1f2937;
+    margin-bottom: 8px;
+  }
+
+  .empty-state-large p {
+    font-size: 14px;
+    max-width: 400px;
+    text-align: center;
+  }
+</style>
+
