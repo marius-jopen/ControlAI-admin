@@ -7,6 +7,8 @@
   let userDetails: UserDetails | null = null;
   let userImages: ImageResource[] = [];
   let selectedApp: string = 'all';
+  let selectedTool: string = 'all';
+  let availableTools: string[] = [];
   let loading = true;
   let loadingDetails = false;
   let loadingImages = false;
@@ -16,11 +18,17 @@
   $: filteredUsers = users.filter(user => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
-    return (
-      user.id.toLowerCase().includes(query) ||
-      user.email?.toLowerCase().includes(query) ||
-      user.full_name?.toLowerCase().includes(query)
-    );
+    
+    // Search by ID, email, full name
+    const matchesId = user.id.toLowerCase().includes(query);
+    const matchesEmail = user.email?.toLowerCase().includes(query);
+    const matchesName = user.full_name?.toLowerCase().includes(query);
+    
+    // Also search by email domain (e.g., "@company.com")
+    const emailDomain = user.email?.split('@')[1]?.toLowerCase();
+    const matchesDomain = emailDomain?.includes(query);
+    
+    return matchesId || matchesEmail || matchesName || matchesDomain;
   });
 
   onMount(async () => {
@@ -44,14 +52,19 @@
     loadingDetails = true;
     loadingImages = true;
     selectedApp = 'all';
+    selectedTool = 'all';
 
     try {
       // Load user details
       const details = await getUserDetails(user.id);
       userDetails = details;
       
-      // Load user images
-      await loadImages(user.id, 'all');
+      // Load ALL images first to get all available tools
+      const allImagesResult = await getUserImages(user.id, { limit: 1000 });
+      availableTools = [...new Set(allImagesResult.images.map(img => img.tool))].sort();
+      
+      // Then load images with current filters
+      await loadImages(user.id, 'all', 'all');
     } catch (error) {
       console.error('Error loading user details:', error);
     } finally {
@@ -59,16 +72,18 @@
     }
   }
 
-  async function loadImages(userId: string, app: string) {
+  async function loadImages(userId: string, app: string, tool: string) {
     if (!userId) return;
     
     loadingImages = true;
     try {
       const result = await getUserImages(userId, {
         app: app === 'all' ? undefined : app,
+        tool: tool === 'all' ? undefined : tool,
         limit: 100
       });
       userImages = result.images;
+      // Don't recalculate availableTools - keep all tools visible
     } catch (error) {
       console.error('Error loading images:', error);
       userImages = [];
@@ -80,7 +95,14 @@
   function handleAppFilter(app: string) {
     selectedApp = app;
     if (selectedUser) {
-      loadImages(selectedUser.id, app);
+      loadImages(selectedUser.id, app, selectedTool);
+    }
+  }
+
+  function handleToolFilter(tool: string) {
+    selectedTool = tool;
+    if (selectedUser) {
+      loadImages(selectedUser.id, selectedApp, tool);
     }
   }
 
@@ -111,11 +133,11 @@
   <!-- Left Sidebar - Users List -->
   <div class="users-sidebar">
       <div class="sidebar-header">
-      <h2>Users ({users.length})</h2>
+      <h2>Users ({filteredUsers.length} of {users.length})</h2>
       <input
         type="text"
         class="input search-input"
-        placeholder="Search users..."
+        placeholder="Search by name, email, or domain..."
         bind:value={searchQuery}
       />
     </div>
@@ -218,23 +240,52 @@
         <section class="details-section">
           <div class="section-header">
             <h3>Generated Images ({userImages.length})</h3>
-            <div class="app-filter">
-              <button
-                class="filter-btn"
-                class:active={selectedApp === 'all'}
-                on:click={() => handleAppFilter('all')}
-              >
-                All Apps
-              </button>
-              {#each AVAILABLE_APPS as app}
-                <button
-                  class="filter-btn"
-                  class:active={selectedApp === app.id}
-                  on:click={() => handleAppFilter(app.id)}
-                >
-                  {app.name}
-                </button>
-              {/each}
+            <div class="filters-container">
+              <div class="filter-group">
+                <label>App:</label>
+                <div class="app-filter">
+                  <button
+                    class="filter-btn"
+                    class:active={selectedApp === 'all'}
+                    on:click={() => handleAppFilter('all')}
+                  >
+                    All Apps
+                  </button>
+                  {#each AVAILABLE_APPS as app}
+                    <button
+                      class="filter-btn"
+                      class:active={selectedApp === app.id}
+                      on:click={() => handleAppFilter(app.id)}
+                    >
+                      {app.name}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+              
+              {#if availableTools.length > 0}
+                <div class="filter-group">
+                  <label>Tool:</label>
+                  <div class="tool-filter">
+                    <button
+                      class="filter-btn"
+                      class:active={selectedTool === 'all'}
+                      on:click={() => handleToolFilter('all')}
+                    >
+                      All Tools
+                    </button>
+                    {#each availableTools as tool}
+                      <button
+                        class="filter-btn"
+                        class:active={selectedTool === tool}
+                        on:click={() => handleToolFilter(tool)}
+                      >
+                        {tool}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             </div>
           </div>
 
@@ -413,14 +464,39 @@
   }
 
   .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-bottom: 20px;
   }
 
   .section-header h3 {
-    margin-bottom: 0;
+    margin-bottom: 16px;
+  }
+
+  .filters-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .filter-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .filter-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    min-width: 50px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .app-filter,
+  .tool-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .info-grid {
@@ -519,11 +595,6 @@
     color: #1f2937;
   }
 
-  .app-filter {
-    display: flex;
-    gap: 8px;
-  }
-
   .filter-btn {
     padding: 6px 12px;
     border: 1px solid #e5e7eb;
@@ -546,8 +617,8 @@
 
   .images-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
   }
 
   .image-card {
