@@ -47,6 +47,13 @@
             >
               📱 Apps
             </a>
+            <a 
+              href="/admin/loras" 
+              class="nav-tab"
+              class:active={currentPath === '/admin/loras'}
+            >
+              🎨 LoRAs
+            </a>
           </nav>
         </div>
         <div class="header-actions">

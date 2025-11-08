@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAllApps, updateApp, createApp, deleteApp, type AppConfig } from '$lib/api/client';
+  import { getAllApps, updateApp, createApp, deleteApp, type AppConfig, getAllLoras, type Lora } from '$lib/api/client';
 
   let apps: AppConfig[] = [];
   let selectedApp: AppConfig | null = null;
@@ -11,6 +11,10 @@
   let showCreateModal = false;
   let showDeleteConfirm = false;
   let hasUnsavedChanges = false;
+  
+  // LoRAs
+  let allLoras: Lora[] = [];
+  let lorasLoading = false;
 
   // Form state for selected app
   let formData: any = null;
@@ -42,8 +46,20 @@
   };
 
   onMount(async () => {
-    await loadApps();
+    await Promise.all([loadApps(), loadLoras()]);
   });
+  
+  async function loadLoras() {
+    try {
+      lorasLoading = true;
+      allLoras = await getAllLoras();
+    } catch (err: any) {
+      console.error('Error loading LoRAs:', err);
+      // Don't block the UI if LoRAs fail to load
+    } finally {
+      lorasLoading = false;
+    }
+  }
 
   async function loadApps() {
     loading = true;
@@ -252,17 +268,52 @@
   }
 
   // Available tools list
-  const AVAILABLE_TOOLS = [
-    { id: 'flux-basic', name: 'Flux Basic' },
-    { id: 'sdxl-basic', name: 'SDXL Basic' },
-    { id: 'open-image', name: 'OpenAI Image' },
-    { id: 'g-image', name: 'Google Image' },
-    { id: 'sdxl-i2i', name: 'SDXL Image-to-Image' },
-    { id: 'open-inpaint', name: 'OpenAI Inpaint' },
-    { id: 'deforum-basic', name: 'Deforum Basic' },
-    { id: 'latent-shift', name: 'Latent Shift' },
-    { id: 'latent-scroll', name: 'Latent Scroll' }
+  const AVAILABLE_TOOLS: Array<{id: string, name: string, loraType: 'flux' | 'sdxl' | null}> = [
+    { id: 'flux-basic', name: 'Flux Basic', loraType: 'flux' },
+    { id: 'sdxl-basic', name: 'SDXL Basic', loraType: 'sdxl' },
+    { id: 'open-image', name: 'OpenAI Image', loraType: null },
+    { id: 'g-image', name: 'Google Image', loraType: null },
+    { id: 'sdxl-i2i', name: 'SDXL Image-to-Image', loraType: 'sdxl' },
+    { id: 'open-inpaint', name: 'OpenAI Inpaint', loraType: null },
+    { id: 'deforum-basic', name: 'Deforum Basic', loraType: 'sdxl' },
+    { id: 'latent-shift', name: 'Latent Shift', loraType: 'sdxl' },
+    { id: 'latent-scroll', name: 'Latent Scroll', loraType: 'sdxl' }
   ];
+  
+  // Get available LoRAs for a specific tool
+  function getLorasForTool(toolId: string): Lora[] {
+    const toolDef = AVAILABLE_TOOLS.find(t => t.id === toolId);
+    if (!toolDef || !toolDef.loraType) return [];
+    return allLoras.filter(lora => lora.type === toolDef.loraType);
+  }
+  
+  // Toggle LoRA for a tool
+  function toggleLoraForTool(toolId: string, loraId: string) {
+    const tool = formData.config.features.studio.tools[toolId];
+    if (!tool) return;
+    
+    // Initialize loras array if it doesn't exist
+    if (!tool.loras) {
+      tool.loras = [];
+    }
+    
+    // Toggle the LoRA
+    const index = tool.loras.indexOf(loraId);
+    if (index > -1) {
+      tool.loras.splice(index, 1);
+    } else {
+      tool.loras.push(loraId);
+    }
+    
+    formData = formData; // Trigger reactivity
+    markChanged();
+  }
+  
+  // Check if a LoRA is enabled for a tool
+  function isLoraEnabledForTool(toolId: string, loraId: string): boolean {
+    const tool = formData.config.features.studio.tools[toolId];
+    return tool?.loras?.includes(loraId) || false;
+  }
 </script>
 
 <div class="apps-management">
@@ -454,51 +505,107 @@
               {@const isEnabled = tool?.enabled || false}
               
               <div class="tool-row" class:enabled={isEnabled}>
-                <div class="tool-main">
-                  <label class="tool-toggle">
+                <div class="tool-header">
+                  <div class="tool-toggle-section">
                     <input 
                       type="checkbox" 
                       checked={isEnabled}
                       on:change={() => toggleTool(toolDef.id)}
+                      class="tool-checkbox"
                     />
-                    <span class="tool-name">{toolDef.name}</span>
-                    <span class="tool-id">{toolDef.id}</span>
-                  </label>
+                    {#if tool?.thumbnail}
+                      <div class="tool-thumbnail">
+                        <img src={tool.thumbnail} alt={toolDef.name} />
+                      </div>
+                    {:else}
+                      <div class="tool-thumbnail tool-thumbnail-placeholder">
+                        <span>🔧</span>
+                      </div>
+                    {/if}
+                    <div class="tool-info">
+                      <span class="tool-name">{toolDef.name}</span>
+                      <span class="tool-id">{toolDef.id}</span>
+                    </div>
+                  </div>
                 </div>
                 
                 {#if isEnabled && tool}
                   <div class="tool-settings">
-                    <div class="tool-setting">
-                      <label>Display Title</label>
-                      <input 
-                        type="text" 
-                        class="input input-sm" 
-                        bind:value={tool.title}
-                        on:input={markChanged}
-                        placeholder="Tool display name"
-                      />
+                    <div class="tool-settings-grid">
+                      <div class="tool-setting">
+                        <label>Display Title</label>
+                        <input 
+                          type="text" 
+                          class="input input-sm" 
+                          bind:value={tool.title}
+                          on:input={markChanged}
+                          placeholder="Tool display name"
+                        />
+                      </div>
+                      <div class="tool-setting">
+                        <label>Thumbnail URL</label>
+                        <input 
+                          type="text" 
+                          class="input input-sm" 
+                          bind:value={tool.thumbnail}
+                          on:input={markChanged}
+                          placeholder="https://..."
+                        />
+                      </div>
                     </div>
-                    <div class="tool-setting">
-                      <label>Thumbnail URL</label>
-                      <input 
-                        type="text" 
-                        class="input input-sm" 
-                        bind:value={tool.thumbnail}
-                        on:input={markChanged}
-                        placeholder="https://..."
-                      />
-                    </div>
-                    <div class="tool-setting-checkbox">
+                    
+                    <div class="tool-settings-options">
                       <label class="checkbox-label">
                         <input 
                           type="checkbox" 
                           bind:checked={tool.initImage}
                           on:change={markChanged}
                         />
-                        <span>Requires Initial Image</span>
+                        <span>Requires Initial Image (tool accepts an input image)</span>
                       </label>
                     </div>
                   </div>
+                  
+                  <!-- LoRA Selection -->
+                  {#if toolDef.loraType}
+                    {@const availableLoras = getLorasForTool(toolDef.id)}
+                    {#if availableLoras.length > 0}
+                      <div class="tool-setting-loras">
+                        <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()})</label>
+                        <div class="loras-grid">
+                          {#each availableLoras as lora}
+                            {@const isSelected = isLoraEnabledForTool(toolDef.id, lora.id)}
+                            <label class="lora-checkbox" class:selected={isSelected}>
+                              <input 
+                                type="checkbox" 
+                                checked={isSelected}
+                                on:change={() => toggleLoraForTool(toolDef.id, lora.id)}
+                              />
+                              <div class="lora-info">
+                                {#if lora.image}
+                                  <img src={lora.image} alt={lora.name} class="lora-thumb" />
+                                {/if}
+                                <div class="lora-text">
+                                  <span class="lora-name">{lora.name}</span>
+                                  {#if lora.trigger}
+                                    <span class="lora-trigger">{lora.trigger}</span>
+                                  {/if}
+                                </div>
+                              </div>
+                            </label>
+                          {/each}
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="tool-setting-loras">
+                        <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()})</label>
+                        <p class="loras-empty">
+                          No {(toolDef.loraType || '').toUpperCase()} LoRAs available. 
+                          <a href="/admin/loras" target="_blank">Add LoRAs</a>
+                        </p>
+                      </div>
+                    {/if}
+                  {/if}
                 {/if}
               </div>
             {/each}
@@ -910,21 +1017,50 @@
     box-shadow: 0 1px 3px rgba(59, 130, 246, 0.1);
   }
 
-  .tool-main {
+  .tool-header {
     padding: 16px 20px;
   }
 
-  .tool-toggle {
+  .tool-toggle-section {
     display: flex;
     align-items: center;
-    gap: 12px;
-    cursor: pointer;
+    gap: 16px;
   }
 
-  .tool-toggle input[type="checkbox"] {
+  .tool-checkbox {
     width: 20px;
     height: 20px;
     cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .tool-thumbnail {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tool-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .tool-thumbnail-placeholder {
+    font-size: 32px;
+  }
+
+  .tool-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
   }
 
   .tool-name {
@@ -944,14 +1080,22 @@
   }
 
   .tool-settings {
-    padding: 20px;
-    padding-top: 16px;
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 16px;
     border-top: 1px solid #e5e7eb;
-    margin-top: 12px;
     background: #fafbfc;
+  }
+
+  .tool-settings-grid {
+    padding: 20px 20px 0 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: end;
+  }
+
+  .tool-settings-options {
+    padding: 16px 20px;
+    display: flex;
+    gap: 20px;
   }
 
   .tool-setting {
@@ -966,24 +1110,137 @@
     color: #6b7280;
   }
 
-  .tool-setting-checkbox {
-    display: flex;
-    align-items: flex-end;
-  }
-
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 14px;
     color: #374151;
+    padding: 0;
   }
 
   .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .checkbox-label span {
+    user-select: none;
+  }
+
+  /* LoRA Selection Styles */
+  .tool-setting-loras {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .tool-setting-loras > label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .loras-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  .lora-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+  }
+
+  .lora-checkbox:hover {
+    border-color: #d1d5db;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  .lora-checkbox.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+
+  .lora-checkbox input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
     width: 16px;
     height: 16px;
     cursor: pointer;
+  }
+
+  .lora-info {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .lora-thumb {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: #f3f4f6;
+  }
+
+  .lora-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .lora-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2937;
+    line-height: 1.2;
+  }
+
+  .lora-trigger {
+    font-size: 11px;
+    color: #6b7280;
+    font-style: italic;
+    line-height: 1.2;
+  }
+
+  .loras-empty {
+    font-size: 13px;
+    color: #6b7280;
+    padding: 12px;
+    background: white;
+    border: 1px dashed #d1d5db;
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .loras-empty a {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .loras-empty a:hover {
+    text-decoration: underline;
   }
 
   /* Modal styles */

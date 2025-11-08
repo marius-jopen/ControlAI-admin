@@ -229,3 +229,82 @@ export async function deleteApp(appId: string): Promise<void> {
     method: 'DELETE'
   });
 }
+
+// =============================================
+// LoRA API Functions
+// =============================================
+
+export interface Lora {
+  id: string;
+  name: string;
+  value: string; // Model identifier
+  trigger: string | null;
+  description: string | null;
+  image: string | null;
+  type: 'sdxl' | 'flux';
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Get all LoRAs
+ * @param type - Optional filter by type ('sdxl' or 'flux')
+ */
+export async function getAllLoras(type?: 'sdxl' | 'flux'): Promise<Lora[]> {
+  const queryParams = type ? `?type=${type}` : '';
+  const response = await fetch(`${API_URL}/api/v1/loras${queryParams}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch LoRAs');
+  }
+  
+  const data = await response.json();
+  return data.data;
+}
+
+/**
+ * Get a single LoRA by ID
+ */
+export async function getLoraById(loraId: string): Promise<Lora> {
+  const response = await fetch(`${API_URL}/api/v1/loras/${loraId}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch LoRA');
+  }
+  
+  const data = await response.json();
+  return data.data;
+}
+
+/**
+ * Create a new LoRA (admin only)
+ */
+export async function createLora(loraData: Omit<Lora, 'id' | 'created_at' | 'updated_at'>): Promise<Lora> {
+  const data = await fetchWithAuth('/api/v1/loras', {
+    method: 'POST',
+    body: JSON.stringify(loraData)
+  });
+  
+  return data.data;
+}
+
+/**
+ * Update an existing LoRA (admin only)
+ */
+export async function updateLora(loraId: string, loraData: Partial<Omit<Lora, 'id' | 'created_at' | 'updated_at'>>): Promise<Lora> {
+  const data = await fetchWithAuth(`/api/v1/loras/${loraId}`, {
+    method: 'PUT',
+    body: JSON.stringify(loraData)
+  });
+  
+  return data.data;
+}
+
+/**
+ * Delete a LoRA (admin only)
+ */
+export async function deleteLora(loraId: string): Promise<void> {
+  await fetchWithAuth(`/api/v1/loras/${loraId}`, {
+    method: 'DELETE'
+  });
+}
