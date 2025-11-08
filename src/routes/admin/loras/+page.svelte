@@ -262,6 +262,15 @@
     }
   }
 
+  // Toggle create form and load RunPod files
+  async function toggleNewLoraForm() {
+    showNewLoraForm = !showNewLoraForm;
+    // Load RunPod files when opening the form (if not already loaded)
+    if (showNewLoraForm && remoteFiles.length === 0) {
+      await loadRemoteFiles();
+    }
+  }
+
   // RunPod S3 functions
   async function toggleRunPodSection() {
     showRunPodSection = !showRunPodSection;
@@ -494,7 +503,7 @@
       <button class="btn btn-secondary" on:click={toggleRunPodSection}>
         {showRunPodSection ? '📥 Hide RunPod S3' : '☁️ RunPod S3'}
       </button>
-      <button class="btn btn-primary" on:click={() => showNewLoraForm = !showNewLoraForm}>
+      <button class="btn btn-primary" on:click={toggleNewLoraForm}>
         {showNewLoraForm ? '❌ Cancel' : '➕ New LoRA'}
       </button>
     </div>
@@ -507,133 +516,174 @@
   {/if}
 
   {#if showNewLoraForm}
-    <div class="new-lora-form compact">
-      <h3>➕ Create New LoRA</h3>
-      <div class="form-grid-compact">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="new-name">Name *</label>
-            <input
-              id="new-name"
-              type="text"
-              bind:value={newLora.name}
-              placeholder="e.g., Celine Bags"
-            />
-          </div>
-          
-          <div class="form-group">
-            <label for="new-value">Value (Model ID) *</label>
-            <input
-              id="new-value"
-              type="text"
-              bind:value={newLora.value}
-              placeholder="e.g., sdxl_celine-bag-v3"
-            />
-          </div>
-        </div>
+    <div class="new-lora-form-card">
+      <div class="form-card-header">
+        <h3>➕ Create New LoRA</h3>
+        <p class="form-subtitle">Add a new LoRA model to your library</p>
+      </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="new-type">Type *</label>
-            <select id="new-type" bind:value={newLora.type}>
-              <option value="sdxl">SDXL</option>
-              <option value="flux">Flux</option>
-            </select>
-          </div>
-          
-          <div class="form-group">
-            <label for="new-trigger">Trigger Word</label>
-            <input
-              id="new-trigger"
-              type="text"
-              bind:value={newLora.trigger}
-              placeholder="e.g., Celine Bag"
-            />
-          </div>
-        </div>
-        
-        <div class="form-row-full">
-          <div class="form-group">
-            <label for="new-description">Description</label>
-            <textarea
-              id="new-description"
-              bind:value={newLora.description}
-              placeholder="Describe what this LoRA does..."
-              rows="2"
-            ></textarea>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="new-lora-file">LoRA File (.safetensors)</label>
-            <div class="file-upload-container">
-              {#if loraFile}
-                <div class="file-selected">
-                  <span class="file-icon">📦</span>
-                  <span class="file-name">{loraFile.name}</span>
-                  <span class="file-size">({(loraFile.size / 1024 / 1024).toFixed(2)} MB)</span>
-                  <button 
-                    type="button"
-                    class="btn-remove-file"
-                    on:click={() => loraFile = null}
-                    title="Remove file"
-                  >
-                    ✕
-                  </button>
-                </div>
-              {:else}
-                <label class="btn btn-sm btn-secondary">
-                  📁 Choose File
-                  <input 
-                    id="new-lora-file"
-                    type="file" 
-                    accept=".safetensors" 
-                    style="display: none;"
-                    on:change={handleLoraFileSelect}
-                  />
-                </label>
-              {/if}
+      <div class="form-card-body">
+        <!-- Basic Information Section -->
+        <div class="form-section">
+          <h4 class="section-title">📝 Basic Information</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="new-name">Name *</label>
+              <input
+                id="new-name"
+                type="text"
+                bind:value={newLora.name}
+                placeholder="e.g., Celine Bags"
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="new-type">Type *</label>
+              <select id="new-type" bind:value={newLora.type}>
+                <option value="sdxl">SDXL</option>
+                <option value="flux">Flux</option>
+              </select>
             </div>
           </div>
-          
+
           <div class="form-group">
-            <label for="new-image">Thumbnail Image</label>
-            <div 
-              class="image-dropzone compact"
-              class:drag-over={dragOverStates['new']}
-              class:uploading={uploadingImages['new']}
-              on:dragover={(e) => handleDragOver(e, null)}
-              on:dragleave={(e) => handleDragLeave(e, null)}
-              on:drop={(e) => handleDrop(e, null)}
-            >
-              {#if newLora.image}
-                <div class="image-preview-compact">
-                  <img src={newLora.image} alt="LoRA preview" />
-                  <button 
-                    type="button"
-                    class="btn-remove-image" 
-                    on:click={() => newLora.image = ''}
-                    title="Remove image"
-                  >
-                    ✕
-                  </button>
+            <label for="new-value">Value (Model ID) *</label>
+            {#if remoteFiles.length > 0}
+              <div class="value-input-group">
+                <select id="new-value" bind:value={newLora.value} class="value-select">
+                  <option value="">-- Select from RunPod S3 --</option>
+                  {#each remoteFiles as file}
+                    <option value={file.name.replace('.safetensors', '')}>
+                      {file.name} ({file.size})
+                    </option>
+                  {/each}
+                </select>
+                <div class="input-divider">
+                  <span>or</span>
                 </div>
-              {/if}
-              
-              <div class="dropzone-content-compact">
-                {#if uploadingImages['new']}
-                  <span class="upload-spinner">⏳</span>
+                <input
+                  type="text"
+                  bind:value={newLora.value}
+                  placeholder="Type custom value..."
+                  class="value-input"
+                />
+              </div>
+            {:else}
+              <input
+                id="new-value"
+                type="text"
+                bind:value={newLora.value}
+                placeholder="e.g., sdxl_celine-bag-v3"
+              />
+            {/if}
+            <p class="field-hint">💡 Select from uploaded files or enter a custom model identifier</p>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="new-trigger">Trigger Word</label>
+              <input
+                id="new-trigger"
+                type="text"
+                bind:value={newLora.trigger}
+                placeholder="e.g., Celine Bag"
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="new-description">Description</label>
+              <input
+                id="new-description"
+                type="text"
+                bind:value={newLora.description}
+                placeholder="What does this LoRA do?"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Files Section -->
+        <div class="form-section">
+          <h4 class="section-title">📦 Files</h4>
+          <div class="form-row files-row">
+            <div class="form-group file-group">
+              <label for="new-lora-file">LoRA File (.safetensors)</label>
+              <div class="file-upload-box">
+                {#if loraFile}
+                  <div class="file-selected-card">
+                    <span class="file-icon">📦</span>
+                    <div class="file-details">
+                      <span class="file-name">{loraFile.name}</span>
+                      <span class="file-size">{(loraFile.size / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                    <button 
+                      type="button"
+                      class="btn-remove-file"
+                      on:click={() => loraFile = null}
+                      title="Remove file"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 {:else}
-                  <label class="btn btn-xs btn-secondary">
-                    {newLora.image ? 'Replace' : '📸 Add'}
+                  <label class="file-upload-button">
+                    <span class="upload-icon">📁</span>
+                    <span class="upload-text">Choose File</span>
                     <input 
+                      id="new-lora-file"
                       type="file" 
-                      accept="image/*" 
+                      accept=".safetensors" 
                       style="display: none;"
-                      on:change={(e) => handleFileSelect(e, null)}
+                      on:change={handleLoraFileSelect}
                     />
                   </label>
+                  <p class="upload-hint">Optional - upload if not in RunPod S3</p>
+                {/if}
+              </div>
+            </div>
+            
+            <div class="form-group image-group">
+              <label for="new-image">Thumbnail Image</label>
+              <div 
+                class="image-upload-box"
+                class:drag-over={dragOverStates['new']}
+                class:uploading={uploadingImages['new']}
+                class:has-image={newLora.image}
+                on:dragover={(e) => handleDragOver(e, null)}
+                on:dragleave={(e) => handleDragLeave(e, null)}
+                on:drop={(e) => handleDrop(e, null)}
+              >
+                {#if newLora.image}
+                  <div class="image-preview-card">
+                    <img src={newLora.image} alt="LoRA preview" />
+                    <button 
+                      type="button"
+                      class="btn-remove-image" 
+                      on:click={() => newLora.image = ''}
+                      title="Remove image"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                {:else}
+                  <div class="image-upload-placeholder">
+                    {#if uploadingImages['new']}
+                      <span class="upload-spinner">⏳</span>
+                      <span class="upload-text">Uploading...</span>
+                    {:else}
+                      <label class="image-upload-button">
+                        <span class="upload-icon">📸</span>
+                        <span class="upload-text">Add Image</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          style="display: none;"
+                          on:change={(e) => handleFileSelect(e, null)}
+                        />
+                      </label>
+                      <p class="upload-hint">Drag & drop or click to upload</p>
+                    {/if}
+                  </div>
                 {/if}
               </div>
             </div>
@@ -641,12 +691,12 @@
         </div>
       </div>
       
-      <div class="form-actions">
-        <button class="btn btn-secondary" on:click={() => showNewLoraForm = false} disabled={uploadingLoraFile}>
+      <div class="form-card-footer">
+        <button class="btn btn-secondary" on:click={toggleNewLoraForm} disabled={uploadingLoraFile}>
           Cancel
         </button>
         <button class="btn btn-primary" on:click={handleCreateLora} disabled={uploadingLoraFile}>
-          {uploadingLoraFile ? '⏳ Uploading File...' : 'Create LoRA'}
+          {uploadingLoraFile ? '⏳ Uploading File...' : '✓ Create LoRA'}
         </button>
       </div>
     </div>
@@ -1071,6 +1121,320 @@
   }
 
   .form-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  }
+
+  /* Enhanced Form Card Styles */
+  .new-lora-form-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 32px;
+    overflow: hidden;
+  }
+
+  .form-card-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 24px;
+  }
+
+  .form-card-header h3 {
+    margin: 0 0 8px 0;
+    font-size: 22px;
+    font-weight: 600;
+  }
+
+  .form-subtitle {
+    margin: 0;
+    font-size: 14px;
+    opacity: 0.9;
+  }
+
+  .form-card-body {
+    padding: 32px;
+  }
+
+  .form-section {
+    margin-bottom: 32px;
+  }
+
+  .form-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .section-title {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .field-hint {
+    margin: 6px 0 0 0;
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  /* Value Input Group */
+  .value-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .value-select {
+    padding: 10px 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    transition: border-color 0.2s;
+  }
+
+  .value-select:focus {
+    border-color: #667eea;
+    outline: none;
+  }
+
+  .input-divider {
+    text-align: center;
+    position: relative;
+  }
+
+  .input-divider::before,
+  .input-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 45%;
+    height: 1px;
+    background: #e5e7eb;
+  }
+
+  .input-divider::before {
+    left: 0;
+  }
+
+  .input-divider::after {
+    right: 0;
+  }
+
+  .input-divider span {
+    background: white;
+    padding: 0 12px;
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 500;
+  }
+
+  .value-input {
+    padding: 10px 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s;
+  }
+
+  .value-input:focus {
+    border-color: #667eea;
+    outline: none;
+  }
+
+  /* File Upload Styles */
+  .files-row {
+    gap: 24px;
+  }
+
+  .file-group,
+  .image-group {
+    flex: 1;
+  }
+
+  .file-upload-box {
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .file-selected-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: #f9fafb;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+  }
+
+  .file-icon {
+    font-size: 32px;
+  }
+
+  .file-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .file-name {
+    font-weight: 500;
+    color: #1f2937;
+    font-size: 14px;
+  }
+
+  .file-size {
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .btn-remove-file {
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .btn-remove-file:hover {
+    background: #dc2626;
+  }
+
+  .file-upload-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px;
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #f9fafb;
+  }
+
+  .file-upload-button:hover {
+    border-color: #667eea;
+    background: #f3f4f6;
+  }
+
+  .upload-icon {
+    font-size: 32px;
+  }
+
+  .upload-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .upload-hint {
+    margin: 8px 0 0 0;
+    font-size: 12px;
+    color: #6b7280;
+    text-align: center;
+  }
+
+  /* Image Upload Styles */
+  .image-upload-box {
+    min-height: 160px;
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f9fafb;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .image-upload-box.drag-over {
+    border-color: #667eea;
+    background: #eef2ff;
+  }
+
+  .image-upload-box.has-image {
+    border-style: solid;
+    border-color: #e5e7eb;
+  }
+
+  .image-preview-card {
+    width: 100%;
+    height: 160px;
+    position: relative;
+  }
+
+  .image-preview-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+
+  .btn-remove-image {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .btn-remove-image:hover {
+    background: rgba(220, 38, 38, 1);
+  }
+
+  .image-upload-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px;
+  }
+
+  .image-upload-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 16px;
+    border-radius: 8px;
+    transition: background 0.2s;
+  }
+
+  .image-upload-button:hover {
+    background: rgba(102, 126, 234, 0.05);
+  }
+
+  .form-card-footer {
+    padding: 20px 32px;
+    background: #f9fafb;
+    border-top: 1px solid #e5e7eb;
     display: flex;
     gap: 12px;
     justify-content: flex-end;
@@ -1722,7 +2086,7 @@
 
   .help-text {
     display: block;
-    margin-top: 4px;
+    margin-top: 20px;
     font-size: 12px;
     color: #6b7280;
   }
