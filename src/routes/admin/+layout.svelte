@@ -31,7 +31,7 @@
     <header class="admin-header">
       <div class="header-content">
         <div class="header-left">
-          <h1>🔐 ControlAI Admin</h1>
+        <h1>🔐 ControlAI Admin</h1>
           <nav class="nav-tabs">
             <a 
               href="/admin" 

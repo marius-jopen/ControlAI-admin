@@ -344,3 +344,133 @@ export async function uploadLoraFromUrl(fileUrl: string, fileName: string): Prom
   });
   return data.data;
 }
+
+// ============================================================================
+// LoRA Image Upload Functions
+// ============================================================================
+
+/**
+ * Upload a LoRA thumbnail image
+ */
+export async function uploadLoraImage(file: File): Promise<{
+  success: boolean;
+  url: string;
+  key: string;
+}> {
+  const token = getAuthToken();
+  
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+  
+  const formData = new FormData();
+  formData.append('image', file);
+  
+  const response = await fetch(`${API_URL}/api/v1/lora-images/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+      // Don't set Content-Type, browser will set it with boundary for multipart/form-data
+    },
+    body: formData
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || error.message || 'Upload failed');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Delete a LoRA image from S3
+ */
+export async function deleteLoraImage(imageUrl: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  return fetchWithAuth('/api/v1/lora-images', {
+    method: 'DELETE',
+    body: JSON.stringify({ imageUrl })
+  });
+}
+
+/**
+ * Upload a LoRA .safetensors file to AWS S3 (limn-data/loras/)
+ */
+export async function uploadLoraFile(file: File): Promise<{
+  success: boolean;
+  url: string;
+  key: string;
+}> {
+  const token = getAuthToken();
+  
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+  
+  const formData = new FormData();
+  formData.append('loraFile', file);
+  
+  const response = await fetch(`${API_URL}/api/v1/lora-files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+      // Don't set Content-Type, browser will set it with boundary for multipart/form-data
+    },
+    body: formData
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || error.message || 'Upload failed');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Upload a LoRA file to RunPod S3
+ */
+export async function uploadLoraToRunPod(file: File): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const token = getAuthToken();
+  
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+  
+  const formData = new FormData();
+  formData.append('loraFile', file);
+  
+  const response = await fetch(`${API_URL}/api/v1/lora-upload/upload-file`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || error.message || 'Upload failed');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Delete a LoRA file from RunPod S3
+ */
+export async function deleteLoraFromRunPod(fileName: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  return fetchWithAuth('/api/v1/lora-upload/delete-file', {
+    method: 'DELETE',
+    body: JSON.stringify({ fileName })
+  });
+}
