@@ -308,3 +308,39 @@ export async function deleteLora(loraId: string): Promise<void> {
     method: 'DELETE'
   });
 }
+
+// ===== LoRA Upload APIs =====
+
+export interface LoraFile {
+  name: string;
+  size: number;
+  sizeFormatted: string;
+  lastModified: string | Date;
+  key?: string;
+}
+
+/**
+ * Get remote LoRA files in RunPod S3 (admin only)
+ */
+export async function getRemoteLoraFiles(): Promise<LoraFile[]> {
+  const data = await fetchWithAuth('/api/v1/lora-upload/remote');
+  return data.data;
+}
+
+/**
+ * Upload a LoRA file from URL (Google Drive, Dropbox, etc.) to RunPod S3 (admin only)
+ */
+export async function uploadLoraFromUrl(fileUrl: string, fileName: string): Promise<{
+  success: boolean;
+  location: string;
+  key: string;
+  fileName: string;
+  size: number;
+  sizeFormatted: string;
+}> {
+  const data = await fetchWithAuth('/api/v1/lora-upload', {
+    method: 'POST',
+    body: JSON.stringify({ fileUrl, fileName })
+  });
+  return data.data;
+}

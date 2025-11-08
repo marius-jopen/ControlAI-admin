@@ -1,6 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAllLoras, createLora, updateLora, deleteLora, type Lora } from '$lib/api/client';
+  import { 
+    getAllLoras, 
+    createLora, 
+    updateLora, 
+    deleteLora, 
+    type Lora,
+    getRemoteLoraFiles,
+    uploadLoraFromUrl,
+    type LoraFile
+  } from '$lib/api/client';
 
   let loras: Lora[] = [];
   let filteredLoras: Lora[] = [];
@@ -9,6 +18,18 @@
   let filterType: 'all' | 'sdxl' | 'flux' = 'all';
   let searchQuery = '';
   let showNewLoraForm = false;
+  
+  // Upload section state
+  let showUploadSection = false;
+  let remoteFiles: LoraFile[] = [];
+  let loadingUpload = false;
+  let uploadError = '';
+  let uploadSuccess = '';
+  let uploading = false;
+  
+  // Upload form
+  let uploadFileUrl = '';
+  let uploadFileName = '';
   
   // New LoRA form
   let newLora: Omit<Lora, 'id' | 'created_at' | 'updated_at'> = {
@@ -26,6 +47,8 @@
 
   onMount(async () => {
     await loadLoras();
+    // Pre-load S3 files for the value dropdown
+    await loadRemoteFiles();
   });
 
   async function loadLoras() {
@@ -181,6 +204,71 @@
     // console.log('🟢 isEditing check for', loraId, ':', result);
     return result;
   }
+
+  // Upload-related functions
+  async function toggleUploadSection() {
+    showUploadSection = !showUploadSection;
+    if (showUploadSection && remoteFiles.length === 0) {
+      await loadRemoteFiles();
+    }
+  }
+
+  async function loadRemoteFiles() {
+    try {
+      loadingUpload = true;
+      uploadError = '';
+      remoteFiles = await getRemoteLoraFiles();
+    } catch (e) {
+      uploadError = e instanceof Error ? e.message : 'Failed to load remote files';
+      console.error('Error loading remote files:', e);
+    } finally {
+      loadingUpload = false;
+    }
+  }
+
+  async function handleUploadFromUrl() {
+    if (!uploadFileUrl || !uploadFileName) {
+      uploadError = 'Please provide both file URL and file name';
+      return;
+    }
+    
+    if (uploading) return;
+    
+    try {
+      uploading = true;
+      uploadError = '';
+      uploadSuccess = '';
+      
+      await uploadLoraFromUrl(uploadFileUrl, uploadFileName);
+      
+      uploadSuccess = `✅ LoRA "${uploadFileName}" uploaded successfully!`;
+      uploadFileUrl = '';
+      uploadFileName = '';
+      
+      // Reload remote files
+      await loadRemoteFiles();
+      
+      console.log('✅ LoRA uploaded successfully');
+    } catch (e) {
+      uploadError = e instanceof Error ? e.message : 'Failed to upload LoRA';
+      console.error('Error uploading LoRA:', e);
+    } finally {
+      uploading = false;
+    }
+  }
+
+  async function refreshRemoteFiles() {
+    await loadRemoteFiles();
+  }
+
+  // Get S3 filenames without .safetensors extension for dropdown
+  function getS3FileOptions() {
+    return remoteFiles.map(file => ({
+      value: file.name.replace('.safetensors', ''),
+      label: file.name,
+      size: file.sizeFormatted
+    }));
+  }
 </script>
 
 <div class="loras-page">
@@ -189,9 +277,14 @@
       <h1>🎨 LoRA Management</h1>
       <p class="subtitle">Manage LoRA models for SDXL and Flux tools</p>
     </div>
-    <button class="btn btn-primary" on:click={() => showNewLoraForm = !showNewLoraForm}>
-      {showNewLoraForm ? '❌ Cancel' : '➕ New LoRA'}
-    </button>
+    <div class="header-actions">
+      <button class="btn btn-secondary" on:click={toggleUploadSection}>
+        {showUploadSection ? '📥 Hide Upload' : '📤 Upload LoRAs'}
+      </button>
+      <button class="btn btn-primary" on:click={() => showNewLoraForm = !showNewLoraForm}>
+        {showNewLoraForm ? '❌ Cancel' : '➕ New LoRA'}
+      </button>
+    </div>
   </div>
 
   {#if error}
@@ -216,12 +309,28 @@
         
         <div class="form-group">
           <label for="new-value">Value (Model ID) *</label>
-          <input
-            id="new-value"
-            type="text"
-            bind:value={newLora.value}
-            placeholder="e.g., sdxl_celine-bag-v3"
-          />
+          {#if remoteFiles.length > 0}
+            <select id="new-value" bind:value={newLora.value}>
+              <option value="">-- Select from S3 or type custom --</option>
+              {#each getS3FileOptions() as option}
+                <option value={option.value}>{option.label} ({option.size})</option>
+              {/each}
+            </select>
+            <input
+              type="text"
+              bind:value={newLora.value}
+              placeholder="Or type custom value: sdxl_celine-bag-v3"
+              class="value-override"
+            />
+          {:else}
+            <input
+              id="new-value"
+              type="text"
+              bind:value={newLora.value}
+              placeholder="e.g., sdxl_celine-bag-v3"
+            />
+          {/if}
+          <small class="help-text">Select from uploaded S3 files or type a custom value</small>
         </div>
         
         <div class="form-group">
@@ -266,6 +375,96 @@
       <div class="form-actions">
         <button class="btn btn-secondary" on:click={() => showNewLoraForm = false}>Cancel</button>
         <button class="btn btn-primary" on:click={handleCreateLora}>Create LoRA</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if showUploadSection}
+    <div class="upload-section">
+      <div class="upload-header">
+        <h3>📤 Upload LoRA Files to RunPod S3</h3>
+        <button class="btn-icon" on:click={refreshRemoteFiles} disabled={loadingUpload} title="Refresh">
+          🔄
+        </button>
+      </div>
+      
+      {#if uploadError}
+        <div class="alert alert-error">
+          ⚠️ {uploadError}
+        </div>
+      {/if}
+
+      {#if uploadSuccess}
+        <div class="alert alert-success">
+          {uploadSuccess}
+        </div>
+      {/if}
+
+      <!-- Upload Form -->
+      <div class="upload-form">
+        <h4>Upload from Google Drive / Dropbox</h4>
+        <p class="upload-instructions-text">
+          Share your LoRA file via Google Drive or Dropbox and paste the link below.
+          The file will be downloaded and uploaded to RunPod S3.
+        </p>
+        
+        <div class="form-grid-upload">
+          <div class="form-group">
+            <label for="upload-url">File URL (Google Drive / Dropbox) *</label>
+            <input
+              id="upload-url"
+              type="text"
+              bind:value={uploadFileUrl}
+              placeholder="https://drive.google.com/file/d/..."
+              disabled={uploading}
+            />
+            <small class="help-text">Make sure the link is publicly accessible</small>
+          </div>
+          
+          <div class="form-group">
+            <label for="upload-name">File Name *</label>
+            <input
+              id="upload-name"
+              type="text"
+              bind:value={uploadFileName}
+              placeholder="my-lora-model.safetensors"
+              disabled={uploading}
+            />
+            <small class="help-text">Must end with .safetensors</small>
+          </div>
+        </div>
+        
+        <button 
+          class="btn btn-primary" 
+          on:click={handleUploadFromUrl}
+          disabled={uploading || !uploadFileUrl || !uploadFileName}
+        >
+          {uploading ? '⏳ Uploading...' : '📤 Upload to RunPod S3'}
+        </button>
+      </div>
+
+      <!-- Remote Files List -->
+      <div class="upload-panel">
+        <h4>☁️ Files in RunPod S3 ({remoteFiles.length})</h4>
+        {#if loadingUpload}
+          <div class="loading-state">
+            ⏳ Loading...
+          </div>
+        {:else if remoteFiles.length === 0}
+          <p class="empty-state">No files in S3</p>
+        {:else}
+          <div class="file-list">
+            {#each remoteFiles as file}
+              <div class="file-item">
+                <div class="file-info">
+                  <div class="file-name">{file.name}</div>
+                  <div class="file-size">{file.sizeFormatted}</div>
+                </div>
+                <span class="file-status">✅ Uploaded</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -395,13 +594,27 @@
             <div class="lora-field">
               <label>Value:</label>
               {#if isCurrentlyEditing}
-                <input
-                  type="text"
-                  class="edit-input"
-                  value={getDisplayValue(lora, 'value')}
-                  on:input={(e) => updateEditingField(lora.id, 'value', e.currentTarget.value)}
-                  placeholder="Model ID"
-                />
+                {#if remoteFiles.length > 0}
+                  <select
+                    class="edit-input"
+                    value={getDisplayValue(lora, 'value')}
+                    on:change={(e) => updateEditingField(lora.id, 'value', e.currentTarget.value)}
+                  >
+                    <option value={lora.value}>{lora.value} (current)</option>
+                    <option disabled>─────────────</option>
+                    {#each getS3FileOptions() as option}
+                      <option value={option.value}>{option.label} ({option.size})</option>
+                    {/each}
+                  </select>
+                {:else}
+                  <input
+                    type="text"
+                    class="edit-input"
+                    value={getDisplayValue(lora, 'value')}
+                    on:input={(e) => updateEditingField(lora.id, 'value', e.currentTarget.value)}
+                    placeholder="Model ID"
+                  />
+                {/if}
               {:else}
                 <code>{lora.value}</code>
               {/if}
@@ -845,6 +1058,198 @@
     outline: none;
     border-color: #2563eb;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  /* Upload Section Styles */
+  .header-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .upload-section {
+    background: #f9fafb;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+
+  .upload-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .upload-header h3 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .btn-icon {
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+  }
+
+  .btn-icon:hover:not(:disabled) {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .btn-icon:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .upload-form {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+
+  .upload-form h4 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .upload-instructions-text {
+    margin: 0 0 20px 0;
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.5;
+  }
+
+  .form-grid-upload {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  @media (min-width: 768px) {
+    .form-grid-upload {
+      grid-template-columns: 2fr 1fr;
+    }
+  }
+
+  .help-text {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .value-override {
+    margin-top: 8px;
+    font-size: 13px;
+    font-family: 'Courier New', monospace;
+    background: #f9fafb;
+    border: 1px dashed #d1d5db;
+  }
+
+  .value-override:focus {
+    background: white;
+    border-style: solid;
+    border-color: #2563eb;
+  }
+
+  .alert-success {
+    background: #d1fae5;
+    border: 1px solid #6ee7b7;
+    color: #065f46;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  .upload-panel {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .upload-panel h4 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    gap: 12px;
+  }
+
+  .file-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .file-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #111827;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-size {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 4px;
+  }
+
+  .file-status {
+    font-size: 13px;
+    color: #059669;
+    white-space: nowrap;
+  }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: #6b7280;
+    font-size: 14px;
+  }
+
+  .loading-state {
+    text-align: center;
+    padding: 32px;
+    color: #6b7280;
+    font-size: 14px;
   }
 </style>
 
