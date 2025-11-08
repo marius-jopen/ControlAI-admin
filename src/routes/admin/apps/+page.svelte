@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAllApps, updateApp, createApp, deleteApp, type AppConfig, getAllLoras, type Lora } from '$lib/api/client';
+  import { getAllApps, updateApp, createApp, deleteApp, type AppConfig, getAllLoras, type Lora, uploadLoraImage } from '$lib/api/client';
 
   let apps: AppConfig[] = [];
   let selectedApp: AppConfig | null = null;
@@ -15,6 +15,10 @@
   // LoRAs
   let allLoras: Lora[] = [];
   let lorasLoading = false;
+
+  // Tool image upload state
+  let uploadingToolImages: Record<string, boolean> = {}; // Track which tool is uploading
+  let dragOverToolStates: Record<string, boolean> = {}; // Track drag-over states
 
   // Form state for selected app
   let formData: any = null;
@@ -243,6 +247,82 @@
     if (!formData) return;
     hasUnsavedChanges = true;
     formData.config.domains = formData.config.domains.filter((_: any, i: number) => i !== index);
+  }
+
+  // Tool image upload handlers
+  function handleToolDragOver(e: DragEvent, toolId: string) {
+    e.preventDefault();
+    dragOverToolStates = { ...dragOverToolStates, [toolId]: true };
+  }
+
+  function handleToolDragLeave(e: DragEvent, toolId: string) {
+    e.preventDefault();
+    dragOverToolStates = { ...dragOverToolStates, [toolId]: false };
+  }
+
+  async function handleToolDrop(e: DragEvent, toolId: string) {
+    e.preventDefault();
+    dragOverToolStates = { ...dragOverToolStates, [toolId]: false };
+
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      error = 'Please upload an image file';
+      return;
+    }
+
+    await uploadToolImage(toolId, file);
+  }
+
+  async function handleToolFileSelect(e: Event, toolId: string) {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+
+    if (!file) return;
+
+    await uploadToolImage(toolId, file);
+
+    // Reset input
+    target.value = '';
+  }
+
+  async function uploadToolImage(toolId: string, file: File) {
+    if (!formData) return;
+
+    try {
+      uploadingToolImages = { ...uploadingToolImages, [toolId]: true };
+      error = '';
+
+      // Upload to S3
+      const result = await uploadLoraImage(file);
+
+      // Add cache-busting timestamp
+      const imageUrlWithTimestamp = `${result.url}?t=${Date.now()}`;
+
+      // Update the tool's thumbnail URL
+      if (!formData.config.features.studio.tools[toolId]) {
+        formData.config.features.studio.tools[toolId] = {
+          enabled: true,
+          title: toolId,
+          thumbnail: imageUrlWithTimestamp
+        };
+      } else {
+        formData.config.features.studio.tools[toolId].thumbnail = imageUrlWithTimestamp;
+      }
+
+      // Trigger reactivity
+      formData = { ...formData };
+      hasUnsavedChanges = true;
+
+      console.log('✅ Tool image uploaded successfully');
+
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to upload image';
+      console.error('Error uploading tool image:', e);
+    } finally {
+      uploadingToolImages = { ...uploadingToolImages, [toolId]: false };
+    }
   }
 
   function addNewAppDomain() {
@@ -514,12 +594,56 @@
                       class="tool-checkbox"
                     />
                     {#if tool?.thumbnail}
-                      <div class="tool-thumbnail">
+                      <div 
+                        class="tool-thumbnail editable"
+                        class:drag-over={dragOverToolStates[toolDef.id]}
+                        class:uploading={uploadingToolImages[toolDef.id]}
+                        on:dragover={(e) => handleToolDragOver(e, toolDef.id)}
+                        on:dragleave={(e) => handleToolDragLeave(e, toolDef.id)}
+                        on:drop={(e) => handleToolDrop(e, toolDef.id)}
+                      >
+                        {#if uploadingToolImages[toolDef.id]}
+                          <div class="tool-upload-overlay">⏳ Uploading...</div>
+                        {:else}
+                          <div class="tool-image-edit-overlay">
+                            <label class="btn-replace-tool-image">
+                              📸 Replace
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                style="display: none;"
+                                on:change={(e) => handleToolFileSelect(e, toolDef.id)}
+                              />
+                            </label>
+                          </div>
+                        {/if}
                         <img src={tool.thumbnail} alt={toolDef.name} />
                       </div>
                     {:else}
-                      <div class="tool-thumbnail tool-thumbnail-placeholder">
-                        <span>🔧</span>
+                      <div 
+                        class="tool-thumbnail tool-thumbnail-placeholder editable"
+                        class:drag-over={dragOverToolStates[toolDef.id]}
+                        class:uploading={uploadingToolImages[toolDef.id]}
+                        on:dragover={(e) => handleToolDragOver(e, toolDef.id)}
+                        on:dragleave={(e) => handleToolDragLeave(e, toolDef.id)}
+                        on:drop={(e) => handleToolDrop(e, toolDef.id)}
+                      >
+                        {#if uploadingToolImages[toolDef.id]}
+                          <div class="tool-upload-overlay">⏳ Uploading...</div>
+                        {:else}
+                          <div class="tool-image-edit-overlay">
+                            <label class="btn-replace-tool-image">
+                              📸 Add Image
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                style="display: none;"
+                                on:change={(e) => handleToolFileSelect(e, toolDef.id)}
+                              />
+                            </label>
+                          </div>
+                          <span>🔧</span>
+                        {/if}
                       </div>
                     {/if}
                     <div class="tool-info">
@@ -1035,15 +1159,34 @@
   }
 
   .tool-thumbnail {
-    width: 64px;
-    height: 64px;
-    border-radius: 8px;
+    width: 120px;
+    height: 120px;
+    border-radius: 12px;
     overflow: hidden;
     flex-shrink: 0;
+    position: relative;
     background: #f3f4f6;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.3s;
+  }
+
+  .tool-thumbnail.editable {
+    cursor: pointer;
+  }
+
+  .tool-thumbnail.editable:hover .tool-image-edit-overlay {
+    opacity: 1;
+  }
+
+  .tool-thumbnail.drag-over {
+    border: 2px solid #3b82f6;
+    background: #eff6ff;
+  }
+
+  .tool-thumbnail.uploading {
+    opacity: 0.6;
   }
 
   .tool-thumbnail img {
@@ -1053,7 +1196,60 @@
   }
 
   .tool-thumbnail-placeholder {
-    font-size: 32px;
+    font-size: 48px;
+  }
+
+  .tool-image-edit-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    opacity: 0;
+    transition: opacity 0.3s;
+    border-radius: 8px;
+    z-index: 2;
+  }
+
+  .btn-replace-tool-image {
+    background: #3b82f6;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    display: inline-block;
+    text-align: center;
+  }
+
+  .btn-replace-tool-image:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  }
+
+  .tool-upload-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    z-index: 3;
+    font-weight: 600;
+    font-size: 12px;
+    border-radius: 8px;
   }
 
   .tool-info {
@@ -1151,7 +1347,7 @@
 
   .loras-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
   }
 
