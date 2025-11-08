@@ -1,12 +1,15 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { authStore, signOut } from '$lib/auth/store';
+  import { page } from '$app/stores';
   import { onMount } from 'svelte';
 
   // Redirect if not admin
   $: if (!$authStore.loading && (!$authStore.isAuthenticated || !$authStore.isAdmin)) {
     goto('/');
   }
+
+  $: currentPath = $page.url.pathname;
 
   async function handleSignOut() {
     try {
@@ -27,7 +30,25 @@
   <div class="admin-layout">
     <header class="admin-header">
       <div class="header-content">
-        <h1>🔐 ControlAI Admin</h1>
+        <div class="header-left">
+          <h1>🔐 ControlAI Admin</h1>
+          <nav class="nav-tabs">
+            <a 
+              href="/admin" 
+              class="nav-tab"
+              class:active={currentPath === '/admin'}
+            >
+              👥 Users
+            </a>
+            <a 
+              href="/admin/apps" 
+              class="nav-tab"
+              class:active={currentPath === '/admin/apps'}
+            >
+              📱 Apps
+            </a>
+          </nav>
+        </div>
         <div class="header-actions">
           <span class="user-email">{$authStore.user?.email}</span>
           <button class="btn btn-secondary" on:click={handleSignOut}>
@@ -91,10 +112,41 @@
     align-items: center;
   }
 
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+
   .admin-header h1 {
     font-size: 20px;
     font-weight: 600;
     color: #1f2937;
+  }
+
+  .nav-tabs {
+    display: flex;
+    gap: 8px;
+  }
+
+  .nav-tab {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #6b7280;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .nav-tab:hover {
+    background: #f3f4f6;
+    color: #1f2937;
+  }
+
+  .nav-tab.active {
+    background: #2563eb;
+    color: white;
   }
 
   .header-actions {
