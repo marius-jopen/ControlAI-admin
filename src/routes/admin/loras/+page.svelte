@@ -362,16 +362,36 @@
         uploadLogs = [...uploadLogs, log];
       });
 
-      runPodSuccess = `✅ "${file.name}" uploaded successfully!`;
+      runPodSuccess = `✅ Transfer initiated! Waiting for file to appear in RunPod S3...`;
 
-      // Reload remote files
-      await loadRemoteFiles();
-
-      // Clear logs and success message after 5 seconds
-      setTimeout(() => {
-        runPodSuccess = '';
-        uploadLogs = [];
-      }, 5000);
+      // Auto-refresh every 10 seconds for up to 2 minutes to catch the transferred file
+      const fileName = file.name;
+      let attempts = 0;
+      const maxAttempts = 12; // 12 * 10s = 2 minutes
+      
+      const checkInterval = setInterval(async () => {
+        attempts++;
+        console.log(`🔄 Auto-refresh attempt ${attempts}/${maxAttempts} for ${fileName}`);
+        
+        await loadRemoteFiles();
+        
+        // Check if file appeared
+        const fileExists = remoteFiles.some(f => f.name === fileName);
+        
+        if (fileExists) {
+          clearInterval(checkInterval);
+          runPodSuccess = `✅ "${fileName}" is now available in RunPod S3!`;
+          uploadLogs = [];
+          setTimeout(() => { runPodSuccess = ''; }, 5000);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          runPodSuccess = '';
+          runPodError = `⚠️ File not found after 2 minutes. The transfer may still be in progress. Try refreshing manually or check server logs.`;
+          uploadLogs = [];
+        } else {
+          runPodSuccess = `⏳ Waiting for transfer to complete... (${attempts * 10}s / ${maxAttempts * 10}s)`;
+        }
+      }, 10000); // Check every 10 seconds
 
     } catch (e) {
       runPodError = e instanceof Error ? e.message : 'Failed to upload to RunPod';
