@@ -33,10 +33,6 @@
     image: '',
     type: 'sdxl'
   };
-  
-  // LoRA file upload state
-  let loraFile: File | null = null;
-  let uploadingLoraFile = false;
 
   // RunPod S3 state
   let showRunPodSection = false;
@@ -181,20 +177,6 @@
         return;
       }
 
-      // Upload LoRA file if provided
-      if (loraFile) {
-        uploadingLoraFile = true;
-        try {
-          const uploadResult = await uploadLoraFile(loraFile);
-          console.log('✅ LoRA file uploaded to S3:', uploadResult.url);
-        } catch (e) {
-          error = e instanceof Error ? e.message : 'Failed to upload LoRA file';
-          uploadingLoraFile = false;
-          return;
-        }
-        uploadingLoraFile = false;
-      }
-
       const createdLora = await createLora(newLora);
       loras = [...loras, createdLora];
       applyFilters();
@@ -208,7 +190,6 @@
         image: '',
         type: 'sdxl'
       };
-      loraFile = null;
       showNewLoraForm = false;
       error = '';
       
@@ -257,28 +238,6 @@
 
   // Upload-related functions
   // LoRA file upload handler
-  async function handleLoraFileSelect(e: Event) {
-    const target = e.target as HTMLInputElement;
-    const file = target.files?.[0];
-    
-    if (!file) return;
-    
-    if (!file.name.endsWith('.safetensors')) {
-      error = 'Please upload a .safetensors file';
-      return;
-    }
-    
-    loraFile = file;
-    // Auto-fill the value field with filename (without extension)
-    if (!newLora.value) {
-      newLora.value = file.name.replace('.safetensors', '');
-    }
-    // Auto-fill the name field with a cleaned-up version
-    if (!newLora.name) {
-      newLora.name = file.name.replace('.safetensors', '').replace(/[-_]/g, ' ');
-    }
-  }
-
   // Toggle create form and load RunPod files
   async function toggleNewLoraForm() {
     showNewLoraForm = !showNewLoraForm;
@@ -590,7 +549,7 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" on:click={toggleRunPodSection}>
-        {showRunPodSection ? '📥 Hide RunPod S3' : '☁️ RunPod S3'}
+        {showRunPodSection ? '📥 Hide Uploaded LoRAs' : '📦 Show Uploaded LoRAs'}
       </button>
       <button class="btn btn-primary" on:click={toggleNewLoraForm}>
         {showNewLoraForm ? '❌ Cancel' : '➕ New LoRA'}
@@ -691,47 +650,11 @@
           </div>
         </div>
 
-        <!-- Files Section -->
+        <!-- Thumbnail Image Section -->
         <div class="form-section">
-          <h4 class="section-title">📦 Files</h4>
-          <div class="form-row files-row">
-            <div class="form-group file-group">
-              <label for="new-lora-file">LoRA File (.safetensors)</label>
-              <div class="file-upload-box">
-                {#if loraFile}
-                  <div class="file-selected-card">
-                    <span class="file-icon">📦</span>
-                    <div class="file-details">
-                      <span class="file-name">{loraFile.name}</span>
-                      <span class="file-size">{(loraFile.size / 1024 / 1024).toFixed(2)} MB</span>
-                    </div>
-                    <button 
-                      type="button"
-                      class="btn-remove-file"
-                      on:click={() => loraFile = null}
-                      title="Remove file"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                {:else}
-                  <label class="file-upload-button">
-                    <span class="upload-icon">📁</span>
-                    <span class="upload-text">Choose File</span>
-                    <input 
-                      id="new-lora-file"
-                      type="file" 
-                      accept=".safetensors" 
-                      style="display: none;"
-                      on:change={handleLoraFileSelect}
-                    />
-                  </label>
-                  <p class="upload-hint">Optional - upload if not in RunPod S3</p>
-                {/if}
-              </div>
-            </div>
-            
-            <div class="form-group image-group">
+          <h4 class="section-title">🖼️ Thumbnail Image</h4>
+          <div class="form-row">
+            <div class="form-group">
               <label for="new-image">Thumbnail Image</label>
               <div 
                 class="image-upload-box"
@@ -764,6 +687,7 @@
                         <span class="upload-icon">📸</span>
                         <span class="upload-text">Add Image</span>
                         <input 
+                          id="new-image"
                           type="file" 
                           accept="image/*" 
                           style="display: none;"
@@ -781,11 +705,11 @@
       </div>
       
       <div class="form-card-footer">
-        <button class="btn btn-secondary" on:click={toggleNewLoraForm} disabled={uploadingLoraFile}>
+        <button class="btn btn-secondary" on:click={toggleNewLoraForm}>
           Cancel
         </button>
-        <button class="btn btn-primary" on:click={handleCreateLora} disabled={uploadingLoraFile}>
-          {uploadingLoraFile ? '⏳ Uploading File...' : '✓ Create LoRA'}
+        <button class="btn btn-primary" on:click={handleCreateLora}>
+          ✓ Create LoRA
         </button>
       </div>
     </div>
@@ -794,7 +718,7 @@
   {#if showRunPodSection}
     <div class="runpod-section">
       <div class="runpod-header">
-        <h3>☁️ RunPod S3 Storage</h3>
+        <h3>📦 Uploaded LoRA Files</h3>
         <div style="display: flex; gap: 8px;">
           <button 
             class="btn-icon" 
