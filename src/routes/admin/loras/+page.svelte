@@ -41,6 +41,7 @@
   let remoteFiles: LoraFile[] = [];
   let loadingRemote = false;
   let uploadingToRunPod = false;
+  let uploadProgress = { percent: 0, loaded: 0, total: 0, status: '' };
   let runPodError = '';
   let runPodSuccess = '';
   let runPodDragOver = false;
@@ -334,29 +335,41 @@
     target.value = '';
   }
 
+  function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
   async function uploadFileToRunPod(file: File) {
     try {
       uploadingToRunPod = true;
+      uploadProgress = { percent: 0, loaded: 0, total: file.size, status: 'Starting upload...' };
       runPodError = '';
       runPodSuccess = '';
 
-      await uploadLoraToRunPod(file);
+      await uploadLoraToRunPod(file, (progress) => {
+        uploadProgress = progress;
+      });
 
       runPodSuccess = `✅ "${file.name}" uploaded successfully!`;
 
       // Reload remote files
       await loadRemoteFiles();
 
-      // Clear success message after 3 seconds
+      // Clear success message after 5 seconds
       setTimeout(() => {
         runPodSuccess = '';
-      }, 3000);
+      }, 5000);
 
     } catch (e) {
       runPodError = e instanceof Error ? e.message : 'Failed to upload to RunPod';
       console.error('Error uploading to RunPod:', e);
     } finally {
       uploadingToRunPod = false;
+      uploadProgress = { percent: 0, loaded: 0, total: 0, status: '' };
     }
   }
 
@@ -738,7 +751,26 @@
         on:drop={handleRunPodDrop}
       >
         {#if uploadingToRunPod}
-          <div class="upload-spinner-large">⏳ Uploading to RunPod S3...</div>
+          <div class="upload-progress-container">
+            <div class="upload-status">
+              <span class="status-icon">📦</span>
+              <span class="status-text">{uploadProgress.status}</span>
+            </div>
+            
+            <div class="progress-bar-wrapper">
+              <div class="progress-bar-bg">
+                <div 
+                  class="progress-bar-fill" 
+                  style="width: {uploadProgress.percent}%"
+                ></div>
+              </div>
+              <div class="progress-text">{uploadProgress.percent}%</div>
+            </div>
+            
+            <div class="upload-details">
+              <span>{formatFileSize(uploadProgress.loaded)} / {formatFileSize(uploadProgress.total)}</span>
+            </div>
+          </div>
         {:else}
           <div class="dropzone-icon-large">☁️</div>
           <p class="dropzone-title">Drag & Drop .safetensors Files Here</p>
@@ -1523,6 +1555,91 @@
   .upload-spinner-large {
     font-size: 24px;
     color: #10b981;
+  }
+
+  .upload-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .upload-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .status-icon {
+    font-size: 32px;
+  }
+
+  .status-text {
+    font-size: 18px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .progress-bar-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .progress-bar-bg {
+    flex: 1;
+    height: 32px;
+    background: #e5e7eb;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #059669);
+    transition: width 0.3s ease;
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  .progress-text {
+    font-size: 16px;
+    font-weight: 600;
+    color: #374151;
+    min-width: 50px;
+    text-align: right;
+  }
+
+  .upload-details {
+    text-align: center;
+    font-size: 14px;
+    color: #6b7280;
   }
 
   .runpod-files {

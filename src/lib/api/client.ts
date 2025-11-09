@@ -431,9 +431,12 @@ export async function uploadLoraFile(file: File): Promise<{
 }
 
 /**
- * Upload a LoRA file to RunPod S3
+ * Upload a LoRA file to RunPod S3 with progress tracking
  */
-export async function uploadLoraToRunPod(file: File): Promise<{
+export async function uploadLoraToRunPod(
+  file: File,
+  onProgress?: (progress: { percent: number; loaded: number; total: number; status: string }) => void
+): Promise<{
   success: boolean;
   message: string;
 }> {
@@ -446,20 +449,75 @@ export async function uploadLoraToRunPod(file: File): Promise<{
   const formData = new FormData();
   formData.append('loraFile', file);
   
-  const response = await fetch(`${API_URL}/api/v1/lora-upload/upload-file`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`
-    },
-    body: formData
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    // Track upload progress
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) {
+        const percent = Math.round((e.loaded / e.total) * 100);
+        onProgress({
+          percent,
+          loaded: e.loaded,
+          total: e.total,
+          status: 'Uploading to server...'
+        });
+      }
+    });
+    
+    // Handle completion
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          if (onProgress) {
+            onProgress({
+              percent: 100,
+              loaded: file.size,
+              total: file.size,
+              status: 'Upload complete!'
+            });
+          }
+          resolve(response);
+        } catch (e) {
+          reject(new Error('Invalid response from server'));
+        }
+      } else {
+        try {
+          const error = JSON.parse(xhr.responseText);
+          reject(new Error(error.error || error.message || 'Upload failed'));
+        } catch (e) {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      }
+    });
+    
+    // Handle errors
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error during upload'));
+    });
+    
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Upload cancelled'));
+    });
+    
+    // When upload completes, show processing status
+    xhr.upload.addEventListener('load', () => {
+      if (onProgress) {
+        onProgress({
+          percent: 100,
+          loaded: file.size,
+          total: file.size,
+          status: 'Processing on RunPod S3...'
+        });
+      }
+    });
+    
+    // Open connection and send
+    xhr.open('POST', `${API_URL}/api/v1/lora-upload/upload-file`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.send(formData);
   });
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(error.error || error.message || 'Upload failed');
-  }
-  
-  return response.json();
 }
 
 /**
