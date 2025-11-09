@@ -46,6 +46,7 @@
   let runPodSuccess = '';
   let runPodDragOver = false;
   let deletingFiles: Set<string> = new Set();
+  let runPodSearchQuery = '';
 
   // Track editing state per LoRA
   let editingLoras: Record<string, Partial<Lora>> = {};
@@ -102,6 +103,13 @@
     searchQuery;
     applyFilters();
   }
+
+  // Filter RunPod files by search query
+  $: filteredRemoteFiles = runPodSearchQuery
+    ? remoteFiles.filter(file => 
+        file.name.toLowerCase().includes(runPodSearchQuery.toLowerCase())
+      )
+    : remoteFiles;
 
   function startEditing(lora: Lora) {
     console.log('🔵 startEditing called for:', lora.name, lora.id);
@@ -785,16 +793,41 @@
 
       <!-- Files List -->
       <div class="runpod-files">
-        <h4>📦 Files in RunPod S3 ({remoteFiles.length})</h4>
+        <div class="runpod-files-header">
+          <h4>📦 Files in RunPod S3 ({remoteFiles.length})</h4>
+          
+          {#if remoteFiles.length > 0}
+            <div class="search-box">
+              <input 
+                type="text" 
+                placeholder="🔍 Search files..." 
+                bind:value={runPodSearchQuery}
+                class="search-input"
+              />
+              {#if runPodSearchQuery}
+                <button 
+                  class="btn-clear-search" 
+                  on:click={() => runPodSearchQuery = ''}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
         {#if loadingRemote}
           <div class="loading-state">
             ⏳ Loading files...
           </div>
         {:else if remoteFiles.length === 0}
           <p class="empty-state">No files found in RunPod S3</p>
+        {:else if filteredRemoteFiles.length === 0}
+          <p class="empty-state">No files match your search "{runPodSearchQuery}"</p>
         {:else}
           <div class="file-list">
-            {#each remoteFiles as file}
+            {#each filteredRemoteFiles as file}
               <div class="file-item">
                 <div class="file-info">
                   <span class="file-icon">📦</span>
@@ -1620,11 +1653,64 @@
     margin-top: 24px;
   }
 
+  .runpod-files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
   .runpod-files h4 {
-    margin: 0 0 16px 0;
+    margin: 0;
     font-size: 16px;
     font-weight: 600;
     color: #374151;
+  }
+
+  .search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    max-width: 400px;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 8px 36px 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  }
+
+  .btn-clear-search {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #9ca3af;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  .btn-clear-search:hover {
+    background: #f3f4f6;
+    color: #6b7280;
   }
 
   .file-list {
