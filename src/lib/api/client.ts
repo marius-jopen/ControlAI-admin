@@ -431,7 +431,9 @@ export async function uploadLoraFile(file: File): Promise<{
 }
 
 /**
- * Upload a LoRA file directly to RunPod S3 (bypasses server for file data)
+ * Upload a LoRA file to RunPod S3 via AWS S3 temp storage (two-step process)
+ * Step 1: Browser → AWS S3 temp (fast, CORS works)
+ * Step 2: Server → RunPod S3 (background transfer)
  */
 export async function uploadLoraToRunPod(
   file: File,
@@ -447,7 +449,7 @@ export async function uploadLoraToRunPod(
   }
 
   try {
-    // Step 1: Get presigned URL from server
+    // Step 1: Get presigned URL for AWS S3 temp storage
     if (onLog) onLog(`📋 Requesting upload URL for ${file.name}...`);
     
     const urlResponse = await fetchWithAuth('/api/v1/lora-upload/get-upload-url', {
@@ -459,10 +461,10 @@ export async function uploadLoraToRunPod(
       throw new Error('Failed to get upload URL');
     }
 
-    if (onLog) onLog(`✅ Upload URL received, starting direct upload...`);
+    if (onLog) onLog(`✅ Upload URL received, starting upload to temp storage...`);
     
-    // Step 2: Upload directly to RunPod S3
-    return new Promise((resolve, reject) => {
+    // Step 2: Upload to AWS S3 temp storage
+    await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
       let lastPercent = 0;
@@ -476,7 +478,7 @@ export async function uploadLoraToRunPod(
           
           // Only log every 10%
           if (percent >= lastPercent + 10 || percent === 100) {
-            onLog(`☁️ Uploading to RunPod S3: ${percent}% (${loadedMB}/${totalMB} MB)`);
+            onLog(`📤 Uploading: ${percent}% (${loadedMB}/${totalMB} MB)`);
             lastPercent = percent;
           }
         }
@@ -485,11 +487,8 @@ export async function uploadLoraToRunPod(
       // Handle completion
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          if (onLog) onLog(`✅ Upload to RunPod S3 complete!`);
-          resolve({
-            success: true,
-            message: `LoRA "${file.name}" uploaded successfully to RunPod S3`
-          });
+          if (onLog) onLog(`✅ Upload to temp storage complete!`);
+          resolve();
         } else {
           reject(new Error(`Upload failed with status ${xhr.status}`));
         }
@@ -497,19 +496,41 @@ export async function uploadLoraToRunPod(
       
       // Handle errors
       xhr.addEventListener('error', () => {
-        reject(new Error('Network error during upload to RunPod S3'));
+        reject(new Error('Network error during upload'));
       });
       
       xhr.addEventListener('abort', () => {
         reject(new Error('Upload cancelled'));
       });
       
-      // Upload directly to RunPod S3 using PUT
-      if (onLog) onLog(`📤 Starting upload to RunPod S3...`);
+      // Upload to AWS S3 using PUT
       xhr.open('PUT', urlResponse.uploadUrl);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       xhr.send(file);
     });
+
+    // Step 3: Trigger background transfer to RunPod S3
+    if (onLog) onLog(`🔄 Starting transfer to RunPod S3...`);
+    
+    const transferResponse = await fetchWithAuth('/api/v1/lora-upload/transfer-to-runpod', {
+      method: 'POST',
+      body: JSON.stringify({
+        tempPath: urlResponse.tempPath,
+        fileName: file.name
+      })
+    });
+
+    if (!transferResponse.success) {
+      throw new Error('Failed to start transfer to RunPod S3');
+    }
+
+    if (onLog) onLog(`✅ Transfer started! File will appear in RunPod S3 shortly.`);
+    if (onLog) onLog(`⏳ Please wait 30-60 seconds for large files...`);
+
+    return {
+      success: true,
+      message: `LoRA "${file.name}" uploaded and transfer initiated successfully`
+    };
 
   } catch (error) {
     if (onLog) onLog(`❌ Error: ${error instanceof Error ? error.message : 'Upload failed'}`);
