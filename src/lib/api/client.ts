@@ -588,6 +588,8 @@ export async function getAwsHealthCheck(): Promise<{
   workspaceBinPath: string;
   homeBinExists: boolean;
   homeBinPath: string;
+  systemAwsCliDetected: boolean;
+  systemAwsCliPath: string | null;
   awsVersionCheck: string | null;
   awsVersionError: string | null;
 }> {

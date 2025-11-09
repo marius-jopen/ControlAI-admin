@@ -843,9 +843,17 @@
             <p>Loading health check...</p>
           {:else if awsHealth}
             <div class="health-grid">
-              <div class="health-item" class:health-ok={awsHealth.workspaceBinExists} class:health-error={!awsHealth.workspaceBinExists}>
-                <strong>AWS CLI File Exists:</strong>
-                <span>{awsHealth.workspaceBinExists ? '✅ Yes' : '❌ No'}</span>
+              <div class="health-item" class:health-ok={awsHealth.systemAwsCliDetected || awsHealth.workspaceBinExists} class:health-error={!awsHealth.systemAwsCliDetected && !awsHealth.workspaceBinExists}>
+                <strong>AWS CLI Status:</strong>
+                <span>
+                  {#if awsHealth.systemAwsCliDetected}
+                    ✅ System AWS CLI (macOS/Linux)
+                  {:else if awsHealth.workspaceBinExists}
+                    ✅ Workspace AWS CLI (DigitalOcean)
+                  {:else}
+                    ❌ Not Found
+                  {/if}
+                </span>
               </div>
               <div class="health-item">
                 <strong>Working Directory:</strong>
@@ -853,7 +861,7 @@
               </div>
               <div class="health-item">
                 <strong>AWS CLI Path:</strong>
-                <code>{awsHealth.workspaceBinPath}</code>
+                <code>{awsHealth.systemAwsCliPath || awsHealth.workspaceBinPath}</code>
               </div>
               {#if awsHealth.awsVersionCheck}
                 <div class="health-item health-ok">
