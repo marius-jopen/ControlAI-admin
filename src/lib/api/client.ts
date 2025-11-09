@@ -431,7 +431,7 @@ export async function uploadLoraFile(file: File): Promise<{
 }
 
 /**
- * Upload a LoRA file to RunPod S3 with real-time server-side logging
+ * Upload a LoRA file directly to RunPod S3 (bypasses server for file data)
  */
 export async function uploadLoraToRunPod(
   file: File,
@@ -445,76 +445,76 @@ export async function uploadLoraToRunPod(
   if (!token) {
     throw new Error('Not authenticated');
   }
-  
-  // Generate a unique session ID for this upload
-  const sessionId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  // Connect to Server-Sent Events for real-time logs
-  // EventSource doesn't support custom headers, so pass token as query param
-  const eventSource = new EventSource(
-    `${API_URL}/api/v1/lora-upload/progress/${sessionId}?token=${encodeURIComponent(token)}`
-  );
-  
-  eventSource.onmessage = (event) => {
-    try {
-      const log = JSON.parse(event.data);
-      if (onLog) {
-        onLog(log.message);
-      }
-    } catch (e) {
-      // Ignore heartbeat messages
-    }
-  };
-  
-  eventSource.onerror = (error) => {
-    console.error('SSE error:', error);
-    eventSource.close();
-  };
-  
-  const formData = new FormData();
-  formData.append('loraFile', file);
-  
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+
+  try {
+    // Step 1: Get presigned URL from server
+    if (onLog) onLog(`📋 Requesting upload URL for ${file.name}...`);
     
-    // Handle completion
-    xhr.addEventListener('load', () => {
-      eventSource.close();
+    const urlResponse = await fetchWithAuth('/api/v1/lora-upload/get-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ fileName: file.name })
+    });
+
+    if (!urlResponse.success || !urlResponse.uploadUrl) {
+      throw new Error('Failed to get upload URL');
+    }
+
+    if (onLog) onLog(`✅ Upload URL received, starting direct upload...`);
+    
+    // Step 2: Upload directly to RunPod S3
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
       
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const response = JSON.parse(xhr.responseText);
-          resolve(response);
-        } catch (e) {
-          reject(new Error('Invalid response from server'));
+      let lastPercent = 0;
+      
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onLog) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          const loadedMB = (e.loaded / 1024 / 1024).toFixed(1);
+          const totalMB = (e.total / 1024 / 1024).toFixed(1);
+          
+          // Only log every 10%
+          if (percent >= lastPercent + 10 || percent === 100) {
+            onLog(`☁️ Uploading to RunPod S3: ${percent}% (${loadedMB}/${totalMB} MB)`);
+            lastPercent = percent;
+          }
         }
-      } else {
-        try {
-          const error = JSON.parse(xhr.responseText);
-          reject(new Error(error.error || error.message || 'Upload failed'));
-        } catch (e) {
+      });
+      
+      // Handle completion
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (onLog) onLog(`✅ Upload to RunPod S3 complete!`);
+          resolve({
+            success: true,
+            message: `LoRA "${file.name}" uploaded successfully to RunPod S3`
+          });
+        } else {
           reject(new Error(`Upload failed with status ${xhr.status}`));
         }
-      }
+      });
+      
+      // Handle errors
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload to RunPod S3'));
+      });
+      
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
+      
+      // Upload directly to RunPod S3 using PUT
+      if (onLog) onLog(`📤 Starting upload to RunPod S3...`);
+      xhr.open('PUT', urlResponse.uploadUrl);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.send(file);
     });
-    
-    // Handle errors
-    xhr.addEventListener('error', () => {
-      eventSource.close();
-      reject(new Error('Network error during upload'));
-    });
-    
-    xhr.addEventListener('abort', () => {
-      eventSource.close();
-      reject(new Error('Upload cancelled'));
-    });
-    
-    // Open connection and send with session ID header
-    xhr.open('POST', `${API_URL}/api/v1/lora-upload/upload-file`);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.setRequestHeader('X-Upload-Session-Id', sessionId);
-    xhr.send(formData);
-  });
+
+  } catch (error) {
+    if (onLog) onLog(`❌ Error: ${error instanceof Error ? error.message : 'Upload failed'}`);
+    throw error;
+  }
 }
 
 /**
