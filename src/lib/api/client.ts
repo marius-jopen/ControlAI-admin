@@ -450,21 +450,10 @@ export async function uploadLoraToRunPod(
   const sessionId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   // Connect to Server-Sent Events for real-time logs
+  // EventSource doesn't support custom headers, so pass token as query param
   const eventSource = new EventSource(
-    `${API_URL}/api/v1/lora-upload/progress/${sessionId}`,
-    { withCredentials: false }
+    `${API_URL}/api/v1/lora-upload/progress/${sessionId}?token=${encodeURIComponent(token)}`
   );
-  
-  // Set up authorization header for EventSource (custom header workaround)
-  const originalFetch = window.fetch;
-  window.fetch = function(...args) {
-    if (args[0]?.toString().includes('/progress/')) {
-      const headers = new Headers(args[1]?.headers || {});
-      headers.set('Authorization', `Bearer ${token}`);
-      args[1] = { ...args[1], headers };
-    }
-    return originalFetch(...args);
-  };
   
   eventSource.onmessage = (event) => {
     try {
@@ -477,7 +466,8 @@ export async function uploadLoraToRunPod(
     }
   };
   
-  eventSource.onerror = () => {
+  eventSource.onerror = (error) => {
+    console.error('SSE error:', error);
     eventSource.close();
   };
   
@@ -490,7 +480,6 @@ export async function uploadLoraToRunPod(
     // Handle completion
     xhr.addEventListener('load', () => {
       eventSource.close();
-      window.fetch = originalFetch; // Restore original fetch
       
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
@@ -512,13 +501,11 @@ export async function uploadLoraToRunPod(
     // Handle errors
     xhr.addEventListener('error', () => {
       eventSource.close();
-      window.fetch = originalFetch;
       reject(new Error('Network error during upload'));
     });
     
     xhr.addEventListener('abort', () => {
       eventSource.close();
-      window.fetch = originalFetch;
       reject(new Error('Upload cancelled'));
     });
     
