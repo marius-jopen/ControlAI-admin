@@ -41,7 +41,7 @@
   let remoteFiles: LoraFile[] = [];
   let loadingRemote = false;
   let uploadingToRunPod = false;
-  let uploadProgress = { percent: 0, loaded: 0, total: 0, status: '' };
+  let uploadLogs: string[] = [];
   let runPodError = '';
   let runPodSuccess = '';
   let runPodDragOver = false;
@@ -346,12 +346,12 @@
   async function uploadFileToRunPod(file: File) {
     try {
       uploadingToRunPod = true;
-      uploadProgress = { percent: 0, loaded: 0, total: file.size, status: 'Starting upload...' };
+      uploadLogs = [`📤 Uploading ${file.name} (${formatFileSize(file.size)})`];
       runPodError = '';
       runPodSuccess = '';
 
-      await uploadLoraToRunPod(file, (progress) => {
-        uploadProgress = progress;
+      await uploadLoraToRunPod(file, (log: string) => {
+        uploadLogs = [...uploadLogs, log];
       });
 
       runPodSuccess = `✅ "${file.name}" uploaded successfully!`;
@@ -359,17 +359,18 @@
       // Reload remote files
       await loadRemoteFiles();
 
-      // Clear success message after 5 seconds
+      // Clear logs and success message after 5 seconds
       setTimeout(() => {
         runPodSuccess = '';
+        uploadLogs = [];
       }, 5000);
 
     } catch (e) {
       runPodError = e instanceof Error ? e.message : 'Failed to upload to RunPod';
+      uploadLogs = [...uploadLogs, `❌ ${e instanceof Error ? e.message : 'Upload failed'}`];
       console.error('Error uploading to RunPod:', e);
     } finally {
       uploadingToRunPod = false;
-      uploadProgress = { percent: 0, loaded: 0, total: 0, status: '' };
     }
   }
 
@@ -751,24 +752,17 @@
         on:drop={handleRunPodDrop}
       >
         {#if uploadingToRunPod}
-          <div class="upload-progress-container">
-            <div class="upload-status">
-              <span class="status-icon">📦</span>
-              <span class="status-text">{uploadProgress.status}</span>
-            </div>
-            
-            <div class="progress-bar-wrapper">
-              <div class="progress-bar-bg">
-                <div 
-                  class="progress-bar-fill" 
-                  style="width: {uploadProgress.percent}%"
-                ></div>
-              </div>
-              <div class="progress-text">{uploadProgress.percent}%</div>
-            </div>
-            
-            <div class="upload-details">
-              <span>{formatFileSize(uploadProgress.loaded)} / {formatFileSize(uploadProgress.total)}</span>
+          <div class="upload-logs-container">
+            <div class="logs-title">📊 Upload Progress</div>
+            <div class="logs-box">
+              {#each uploadLogs as log, i}
+                <div class="log-entry" style="animation-delay: {i * 0.1}s">
+                  {log}
+                </div>
+              {/each}
+              {#if uploadLogs.length === 0}
+                <div class="log-entry">⏳ Waiting for server...</div>
+              {/if}
             </div>
           </div>
         {:else}
@@ -1557,89 +1551,69 @@
     color: #10b981;
   }
 
-  .upload-progress-container {
+  .upload-logs-container {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     width: 100%;
-    max-width: 500px;
+    max-width: 600px;
     margin: 0 auto;
   }
 
-  .upload-status {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    justify-content: center;
-  }
-
-  .status-icon {
-    font-size: 32px;
-  }
-
-  .status-text {
+  .logs-title {
     font-size: 18px;
-    font-weight: 500;
-    color: #374151;
-  }
-
-  .progress-bar-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .progress-bar-bg {
-    flex: 1;
-    height: 32px;
-    background: #e5e7eb;
-    border-radius: 16px;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #10b981, #059669);
-    transition: width 0.3s ease;
-    border-radius: 16px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .progress-bar-fill::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.3),
-      transparent
-    );
-    animation: shimmer 2s infinite;
-  }
-
-  @keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-  }
-
-  .progress-text {
-    font-size: 16px;
     font-weight: 600;
     color: #374151;
-    min-width: 50px;
-    text-align: right;
+    text-align: center;
   }
 
-  .upload-details {
-    text-align: center;
+  .logs-box {
+    background: #1f2937;
+    border-radius: 8px;
+    padding: 16px;
+    min-height: 150px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
     font-size: 14px;
-    color: #6b7280;
+    line-height: 1.6;
+    color: #f3f4f6;
+  }
+
+  .log-entry {
+    padding: 4px 0;
+    opacity: 0;
+    animation: fadeIn 0.3s forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* Scrollbar styling for logs box */
+  .logs-box::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .logs-box::-webkit-scrollbar-track {
+    background: #111827;
+    border-radius: 4px;
+  }
+
+  .logs-box::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 4px;
+  }
+
+  .logs-box::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
   }
 
   .runpod-files {

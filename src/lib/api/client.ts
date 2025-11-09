@@ -431,11 +431,11 @@ export async function uploadLoraFile(file: File): Promise<{
 }
 
 /**
- * Upload a LoRA file to RunPod S3 with progress tracking
+ * Upload a LoRA file to RunPod S3 with real-time server-side logging
  */
 export async function uploadLoraToRunPod(
   file: File,
-  onProgress?: (progress: { percent: number; loaded: number; total: number; status: string }) => void
+  onLog?: (log: string) => void
 ): Promise<{
   success: boolean;
   message: string;
@@ -446,38 +446,55 @@ export async function uploadLoraToRunPod(
     throw new Error('Not authenticated');
   }
   
+  // Generate a unique session ID for this upload
+  const sessionId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Connect to Server-Sent Events for real-time logs
+  const eventSource = new EventSource(
+    `${API_URL}/api/v1/lora-upload/progress/${sessionId}`,
+    { withCredentials: false }
+  );
+  
+  // Set up authorization header for EventSource (custom header workaround)
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    if (args[0]?.toString().includes('/progress/')) {
+      const headers = new Headers(args[1]?.headers || {});
+      headers.set('Authorization', `Bearer ${token}`);
+      args[1] = { ...args[1], headers };
+    }
+    return originalFetch(...args);
+  };
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const log = JSON.parse(event.data);
+      if (onLog) {
+        onLog(log.message);
+      }
+    } catch (e) {
+      // Ignore heartbeat messages
+    }
+  };
+  
+  eventSource.onerror = () => {
+    eventSource.close();
+  };
+  
   const formData = new FormData();
   formData.append('loraFile', file);
   
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     
-    // Track upload progress
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable && onProgress) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        onProgress({
-          percent,
-          loaded: e.loaded,
-          total: e.total,
-          status: 'Uploading to server...'
-        });
-      }
-    });
-    
     // Handle completion
     xhr.addEventListener('load', () => {
+      eventSource.close();
+      window.fetch = originalFetch; // Restore original fetch
+      
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const response = JSON.parse(xhr.responseText);
-          if (onProgress) {
-            onProgress({
-              percent: 100,
-              loaded: file.size,
-              total: file.size,
-              status: 'Upload complete!'
-            });
-          }
           resolve(response);
         } catch (e) {
           reject(new Error('Invalid response from server'));
@@ -494,28 +511,21 @@ export async function uploadLoraToRunPod(
     
     // Handle errors
     xhr.addEventListener('error', () => {
+      eventSource.close();
+      window.fetch = originalFetch;
       reject(new Error('Network error during upload'));
     });
     
     xhr.addEventListener('abort', () => {
+      eventSource.close();
+      window.fetch = originalFetch;
       reject(new Error('Upload cancelled'));
     });
     
-    // When upload completes, show processing status
-    xhr.upload.addEventListener('load', () => {
-      if (onProgress) {
-        onProgress({
-          percent: 100,
-          loaded: file.size,
-          total: file.size,
-          status: 'Processing on RunPod S3...'
-        });
-      }
-    });
-    
-    // Open connection and send
+    // Open connection and send with session ID header
     xhr.open('POST', `${API_URL}/api/v1/lora-upload/upload-file`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('X-Upload-Session-Id', sessionId);
     xhr.send(formData);
   });
 }
