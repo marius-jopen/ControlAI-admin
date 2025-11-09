@@ -539,6 +539,46 @@ export async function uploadLoraToRunPod(
 }
 
 /**
+ * Get all transfer jobs (for debugging)
+ */
+export async function getTransferJobs(): Promise<{
+  success: boolean;
+  jobs: Array<{
+    id: string;
+    fileName: string;
+    status: string;
+    startedAt: string;
+    completedAt?: string;
+    failedAt?: string;
+    error?: string;
+    logs: Array<{ time: string; message: string }>;
+  }>;
+  count: number;
+}> {
+  const response = await fetchWithAuth('/api/v1/lora-upload/transfer-jobs');
+  return response;
+}
+
+/**
+ * Get status of a specific transfer job
+ */
+export async function getTransferJobStatus(jobId: string): Promise<{
+  success: boolean;
+  job: {
+    fileName: string;
+    status: string;
+    startedAt: string;
+    completedAt?: string;
+    failedAt?: string;
+    error?: string;
+    logs: Array<{ time: string; message: string }>;
+  };
+}> {
+  const response = await fetchWithAuth(`/api/v1/lora-upload/transfer-status/${jobId}`);
+  return response;
+}
+
+/**
  * Delete a LoRA file from RunPod S3
  */
 export async function deleteLoraFromRunPod(fileName: string): Promise<{

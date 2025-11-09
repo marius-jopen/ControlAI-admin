@@ -11,6 +11,7 @@
     getRemoteLoraFiles,
     uploadLoraToRunPod,
     deleteLoraFromRunPod,
+    getTransferJobs,
     type LoraFile
   } from '$lib/api/client';
 
@@ -47,6 +48,9 @@
   let runPodDragOver = false;
   let deletingFiles: Set<string> = new Set();
   let runPodSearchQuery = '';
+  let showTransferJobs = false;
+  let transferJobs: any[] = [];
+  let loadingTransferJobs = false;
 
   // Track editing state per LoRA
   let editingLoras: Record<string, Partial<Lora>> = {};
@@ -298,6 +302,26 @@
       console.error('Error loading remote files:', e);
     } finally {
       loadingRemote = false;
+    }
+  }
+
+  async function loadTransferJobs() {
+    try {
+      loadingTransferJobs = true;
+      const result = await getTransferJobs();
+      transferJobs = result.jobs || [];
+    } catch (e) {
+      console.error('Error loading transfer jobs:', e);
+      runPodError = e instanceof Error ? e.message : 'Failed to load transfer jobs';
+    } finally {
+      loadingTransferJobs = false;
+    }
+  }
+
+  function toggleTransferJobs() {
+    showTransferJobs = !showTransferJobs;
+    if (showTransferJobs) {
+      loadTransferJobs();
     }
   }
 
@@ -748,14 +772,24 @@
     <div class="runpod-section">
       <div class="runpod-header">
         <h3>☁️ RunPod S3 Storage</h3>
-        <button 
-          class="btn-icon" 
-          on:click={loadRemoteFiles} 
-          disabled={loadingRemote} 
-          title="Refresh"
-        >
-          {loadingRemote ? '⏳' : '🔄'}
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button 
+            class="btn-icon" 
+            on:click={toggleTransferJobs} 
+            disabled={loadingTransferJobs} 
+            title="View Transfer Jobs (Debug)"
+          >
+            {loadingTransferJobs ? '⏳' : '📊'}
+          </button>
+          <button 
+            class="btn-icon" 
+            on:click={loadRemoteFiles} 
+            disabled={loadingRemote} 
+            title="Refresh"
+          >
+            {loadingRemote ? '⏳' : '🔄'}
+          </button>
+        </div>
       </div>
 
       {#if runPodError}
@@ -767,6 +801,56 @@
       {#if runPodSuccess}
         <div class="alert alert-success">
           {runPodSuccess}
+        </div>
+      {/if}
+
+      <!-- Transfer Jobs Debug Panel -->
+      {#if showTransferJobs}
+        <div class="transfer-jobs-panel">
+          <h4>📊 Transfer Jobs ({transferJobs.length})</h4>
+          {#if loadingTransferJobs}
+            <p>Loading jobs...</p>
+          {:else if transferJobs.length === 0}
+            <p class="empty-state">No transfer jobs found</p>
+          {:else}
+            <div class="jobs-list">
+              {#each transferJobs as job}
+                <div class="job-item" class:failed={job.status === 'failed'} class:completed={job.status === 'completed'}>
+                  <div class="job-header">
+                    <strong>{job.fileName}</strong>
+                    <span class="job-status status-{job.status}">{job.status}</span>
+                  </div>
+                  <div class="job-meta">
+                    <small>Started: {new Date(job.startedAt).toLocaleString()}</small>
+                    {#if job.completedAt}
+                      <small>Completed: {new Date(job.completedAt).toLocaleString()}</small>
+                    {/if}
+                    {#if job.failedAt}
+                      <small>Failed: {new Date(job.failedAt).toLocaleString()}</small>
+                    {/if}
+                  </div>
+                  {#if job.error}
+                    <div class="job-error">
+                      ❌ {job.error}
+                    </div>
+                  {/if}
+                  {#if job.logs && job.logs.length > 0}
+                    <details class="job-logs">
+                      <summary>View Logs ({job.logs.length})</summary>
+                      <div class="logs-content">
+                        {#each job.logs as log}
+                          <div class="log-line">
+                            <span class="log-time">{new Date(log.time).toLocaleTimeString()}</span>
+                            <span class="log-message">{log.message}</span>
+                          </div>
+                        {/each}
+                      </div>
+                    </details>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -1731,6 +1815,142 @@
   .btn-clear-search:hover {
     background: #f3f4f6;
     color: #6b7280;
+  }
+
+  .transfer-jobs-panel {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .transfer-jobs-panel h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .jobs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .job-item {
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 12px;
+  }
+
+  .job-item.completed {
+    border-color: #10b981;
+    background: #f0fdf4;
+  }
+
+  .job-item.failed {
+    border-color: #ef4444;
+    background: #fef2f2;
+  }
+
+  .job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .job-status {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  .status-starting {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .status-running {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-completed {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-failed {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .job-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 8px;
+  }
+
+  .job-error {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  .job-logs {
+    margin-top: 8px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+  }
+
+  .job-logs summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b7280;
+    user-select: none;
+  }
+
+  .job-logs summary:hover {
+    color: #374151;
+  }
+
+  .logs-content {
+    margin-top: 8px;
+    background: #1f2937;
+    color: #f3f4f6;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .log-line {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .log-time {
+    color: #9ca3af;
+    flex-shrink: 0;
+  }
+
+  .log-message {
+    flex: 1;
   }
 
   .file-list {
