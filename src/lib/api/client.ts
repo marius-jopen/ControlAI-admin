@@ -579,6 +579,25 @@ export async function getTransferJobStatus(jobId: string): Promise<{
 }
 
 /**
+ * Get AWS CLI health status (for debugging)
+ */
+export async function getAwsHealthCheck(): Promise<{
+  workingDirectory: string;
+  PATH: string;
+  workspaceBinExists: boolean;
+  workspaceBinPath: string;
+  homeBinExists: boolean;
+  homeBinPath: string;
+  awsVersionCheck: string | null;
+  awsVersionError: string | null;
+}> {
+  // Use direct fetch without auth since this is a public health endpoint
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const response = await fetch(`${apiUrl}/health-aws`);
+  return response.json();
+}
+
+/**
  * Delete a LoRA file from RunPod S3
  */
 export async function deleteLoraFromRunPod(fileName: string): Promise<{

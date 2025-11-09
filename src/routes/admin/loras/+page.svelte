@@ -12,6 +12,7 @@
     uploadLoraToRunPod,
     deleteLoraFromRunPod,
     getTransferJobs,
+    getAwsHealthCheck,
     type LoraFile
   } from '$lib/api/client';
 
@@ -51,6 +52,9 @@
   let showTransferJobs = false;
   let transferJobs: any[] = [];
   let loadingTransferJobs = false;
+  let showAwsHealth = false;
+  let awsHealth: any = null;
+  let loadingAwsHealth = false;
 
   // Track editing state per LoRA
   let editingLoras: Record<string, Partial<Lora>> = {};
@@ -322,6 +326,25 @@
     showTransferJobs = !showTransferJobs;
     if (showTransferJobs) {
       loadTransferJobs();
+    }
+  }
+
+  async function loadAwsHealth() {
+    try {
+      loadingAwsHealth = true;
+      awsHealth = await getAwsHealthCheck();
+    } catch (e) {
+      console.error('Error loading AWS health:', e);
+      runPodError = e instanceof Error ? e.message : 'Failed to load AWS health';
+    } finally {
+      loadingAwsHealth = false;
+    }
+  }
+
+  function toggleAwsHealth() {
+    showAwsHealth = !showAwsHealth;
+    if (showAwsHealth) {
+      loadAwsHealth();
     }
   }
 
@@ -775,6 +798,14 @@
         <div style="display: flex; gap: 8px;">
           <button 
             class="btn-icon" 
+            on:click={toggleAwsHealth} 
+            disabled={loadingAwsHealth} 
+            title="AWS CLI Health Check"
+          >
+            {loadingAwsHealth ? '⏳' : '🔧'}
+          </button>
+          <button 
+            class="btn-icon" 
             on:click={toggleTransferJobs} 
             disabled={loadingTransferJobs} 
             title="View Transfer Jobs (Debug)"
@@ -801,6 +832,47 @@
       {#if runPodSuccess}
         <div class="alert alert-success">
           {runPodSuccess}
+        </div>
+      {/if}
+
+      <!-- AWS Health Check Panel -->
+      {#if showAwsHealth}
+        <div class="aws-health-panel">
+          <h4>🔧 AWS CLI Health Check</h4>
+          {#if loadingAwsHealth}
+            <p>Loading health check...</p>
+          {:else if awsHealth}
+            <div class="health-grid">
+              <div class="health-item" class:health-ok={awsHealth.workspaceBinExists} class:health-error={!awsHealth.workspaceBinExists}>
+                <strong>AWS CLI File Exists:</strong>
+                <span>{awsHealth.workspaceBinExists ? '✅ Yes' : '❌ No'}</span>
+              </div>
+              <div class="health-item">
+                <strong>Working Directory:</strong>
+                <code>{awsHealth.workingDirectory}</code>
+              </div>
+              <div class="health-item">
+                <strong>AWS CLI Path:</strong>
+                <code>{awsHealth.workspaceBinPath}</code>
+              </div>
+              {#if awsHealth.awsVersionCheck}
+                <div class="health-item health-ok">
+                  <strong>AWS CLI Version:</strong>
+                  <code>{awsHealth.awsVersionCheck}</code>
+                </div>
+              {/if}
+              {#if awsHealth.awsVersionError}
+                <div class="health-item health-error">
+                  <strong>AWS CLI Error:</strong>
+                  <code>{awsHealth.awsVersionError}</code>
+                </div>
+              {/if}
+              <details class="health-details">
+                <summary>View Full PATH</summary>
+                <code class="path-display">{awsHealth.PATH}</code>
+              </details>
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -1815,6 +1887,95 @@
   .btn-clear-search:hover {
     background: #f3f4f6;
     color: #6b7280;
+  }
+
+  .aws-health-panel {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .aws-health-panel h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .health-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .health-item {
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .health-item strong {
+    font-size: 12px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .health-item code {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #1f2937;
+    background: #f3f4f6;
+    padding: 4px 8px;
+    border-radius: 4px;
+    word-break: break-all;
+  }
+
+  .health-ok {
+    border-color: #10b981;
+    background: #f0fdf4;
+  }
+
+  .health-error {
+    border-color: #ef4444;
+    background: #fef2f2;
+  }
+
+  .health-details {
+    margin-top: 8px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+  }
+
+  .health-details summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b7280;
+    user-select: none;
+  }
+
+  .health-details summary:hover {
+    color: #374151;
+  }
+
+  .path-display {
+    display: block;
+    margin-top: 8px;
+    background: #1f2937;
+    color: #f3f4f6;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
   }
 
   .transfer-jobs-panel {
