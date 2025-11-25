@@ -353,6 +353,7 @@
     { id: 'sdxl-basic', name: 'SDXL Basic', loraType: 'sdxl' },
     { id: 'open-image', name: 'OpenAI Image', loraType: null },
     { id: 'g-image', name: 'Google Image', loraType: null },
+    { id: 'g-image-3', name: 'Google Image 3 Pro 🍌', loraType: null },
     { id: 'sdxl-i2i', name: 'SDXL Image-to-Image', loraType: 'sdxl' },
     { id: 'open-inpaint', name: 'OpenAI Inpaint', loraType: null },
     { id: 'deforum-basic', name: 'Deforum Basic', loraType: 'sdxl' },
