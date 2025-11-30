@@ -358,7 +358,8 @@
     { id: 'open-inpaint', name: 'OpenAI Inpaint', loraType: null },
     { id: 'deforum-basic', name: 'Deforum Basic', loraType: 'sdxl' },
     { id: 'latent-shift', name: 'Latent Shift', loraType: 'sdxl' },
-    { id: 'latent-scroll', name: 'Latent Scroll', loraType: 'sdxl' }
+    { id: 'latent-scroll', name: 'Latent Scroll', loraType: 'sdxl' },
+    { id: 'latent-click', name: 'Latent Click', loraType: 'sdxl' }
   ];
   
   // Get available LoRAs for a specific tool
