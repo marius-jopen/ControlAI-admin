@@ -542,7 +542,7 @@
 
         <!-- Welcome Message -->
         <section class="details-section">
-          <h3>👋 Welcome Message</h3>
+          <h3> Welcome Message</h3>
           <div class="form-grid">
             <div class="form-group full-width">
               <label>Title</label>
