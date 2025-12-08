@@ -124,7 +124,8 @@ export const AVAILABLE_APPS = [
   { id: 'celine', name: 'CELINE' },
   { id: 'ifm', name: 'IFM' },
   { id: 'thelios', name: 'THELIOS' },
-  { id: 'limn', name: 'Limn' }
+  { id: 'limn', name: 'Limn' },
+  { id: 'guests', name: 'Guests' }
 ];
 
 // ============================================================================

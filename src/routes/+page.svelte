@@ -13,7 +13,8 @@
     { id: 'limn', name: 'Limn' },
     { id: 'celine', name: 'CELINE' },
     { id: 'ifm', name: 'IFM' },
-    { id: 'thelios', name: 'THELIOS' }
+    { id: 'thelios', name: 'THELIOS' },
+    { id: 'guests', name: 'Guests' }
   ];
 
   // Redirect if already authenticated and admin
