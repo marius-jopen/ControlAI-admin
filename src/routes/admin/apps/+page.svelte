@@ -41,7 +41,11 @@
         showGallery: true
       },
       studio: {
-        tools: {}
+        tools: {},
+        globalLoras: {
+          flux: [],
+          sdxl: []
+        }
       }
     },
     env: {
@@ -98,6 +102,14 @@
     // Initialize registerPassword if it doesn't exist
     if (!clonedConfig.registerPassword) {
       clonedConfig.registerPassword = '';
+    }
+    
+    // Initialize globalLoras if it doesn't exist
+    if (!clonedConfig.features.studio.globalLoras) {
+      clonedConfig.features.studio.globalLoras = {
+        flux: [],
+        sdxl: []
+      };
     }
     
     formData = {
@@ -221,7 +233,11 @@
           showGallery: true
         },
         studio: {
-          tools: {}
+          tools: {},
+          globalLoras: {
+            flux: [],
+            sdxl: []
+          }
         }
       },
       env: {
@@ -235,15 +251,44 @@
     if (!formData) return;
     hasUnsavedChanges = true;
     
+    const toolDef = AVAILABLE_TOOLS.find(t => t.id === toolId);
+    
     if (!formData.config.features.studio.tools[toolId]) {
-      formData.config.features.studio.tools[toolId] = {
+      // Create new tool with global LoRAs applied
+      const tool: any = {
         enabled: true,
         title: toolId,
         thumbnail: ''
       };
+      
+      // Apply global LoRAs if tool has a loraType
+      if (toolDef?.loraType && formData.config.features.studio.globalLoras) {
+        const globalLoras = formData.config.features.studio.globalLoras[toolDef.loraType] || [];
+        if (globalLoras.length > 0) {
+          tool.loras = [...globalLoras];
+        }
+      }
+      
+      formData.config.features.studio.tools[toolId] = tool;
     } else {
-      formData.config.features.studio.tools[toolId].enabled = 
-        !formData.config.features.studio.tools[toolId].enabled;
+      const wasEnabled = formData.config.features.studio.tools[toolId].enabled;
+      formData.config.features.studio.tools[toolId].enabled = !wasEnabled;
+      
+      // If enabling the tool, apply global LoRAs
+      if (!wasEnabled && toolDef?.loraType && formData.config.features.studio.globalLoras) {
+        const globalLoras = formData.config.features.studio.globalLoras[toolDef.loraType] || [];
+        if (globalLoras.length > 0) {
+          if (!formData.config.features.studio.tools[toolId].loras) {
+            formData.config.features.studio.tools[toolId].loras = [];
+          }
+          // Add global LoRAs that aren't already present
+          globalLoras.forEach(loraId => {
+            if (!formData.config.features.studio.tools[toolId].loras.includes(loraId)) {
+              formData.config.features.studio.tools[toolId].loras.push(loraId);
+            }
+          });
+        }
+      }
     }
   }
 
@@ -380,6 +425,10 @@
     return allLoras.filter(lora => lora.type === toolDef.loraType);
   }
   
+  // Get LoRAs by type
+  $: fluxLoras = allLoras.filter(lora => lora.type === 'flux');
+  $: sdxlLoras = allLoras.filter(lora => lora.type === 'sdxl');
+  
   // Toggle LoRA for a tool
   function toggleLoraForTool(toolId: string, loraId: string) {
     const tool = formData.config.features.studio.tools[toolId];
@@ -398,6 +447,65 @@
       tool.loras.push(loraId);
     }
     
+    formData = formData; // Trigger reactivity
+    markChanged();
+  }
+  
+  // Toggle global LoRA for all tools of a specific type
+  function toggleGlobalLora(loraType: 'flux' | 'sdxl', loraId: string) {
+    if (!formData) return;
+    
+    // Initialize globalLoras structure if it doesn't exist
+    if (!formData.config.features.studio.globalLoras) {
+      formData.config.features.studio.globalLoras = {
+        flux: [],
+        sdxl: []
+      };
+    }
+    
+    // Toggle the LoRA in global list
+    const globalLoras = formData.config.features.studio.globalLoras[loraType] || [];
+    const index = globalLoras.indexOf(loraId);
+    
+    if (index > -1) {
+      // Remove from global
+      globalLoras.splice(index, 1);
+      
+      // Also remove from all tools of this type
+      AVAILABLE_TOOLS.forEach(toolDef => {
+        if (toolDef.loraType === loraType) {
+          const tool = formData.config.features.studio.tools[toolDef.id];
+          if (tool && tool.loras) {
+            const toolIndex = tool.loras.indexOf(loraId);
+            if (toolIndex > -1) {
+              tool.loras.splice(toolIndex, 1);
+            }
+          }
+        }
+      });
+    } else {
+      // Add to global
+      globalLoras.push(loraId);
+      
+      // Add to all enabled tools of this type
+      AVAILABLE_TOOLS.forEach(toolDef => {
+        if (toolDef.loraType === loraType) {
+          const tool = formData.config.features.studio.tools[toolDef.id];
+          if (tool && tool.enabled) {
+            // Initialize loras array if it doesn't exist
+            if (!tool.loras) {
+              tool.loras = [];
+            }
+            // Add if not already present
+            if (!tool.loras.includes(loraId)) {
+              tool.loras.push(loraId);
+            }
+          }
+        }
+      });
+    }
+    
+    formData.config.features.studio.globalLoras[loraType] = globalLoras;
     formData = formData; // Trigger reactivity
     markChanged();
   }
@@ -646,6 +754,80 @@
           </div>
         </section>
 
+        <!-- Global LoRAs -->
+        <section class="details-section">
+          <h3>🎨 Global LoRAs</h3>
+          <p class="section-description">Select LoRAs to enable across all compatible tools (can be overridden per tool)</p>
+          
+          <div class="global-loras-container">
+            <!-- FLUX LoRAs -->
+            {#if fluxLoras.length > 0}
+              <div class="global-lora-type-section">
+                <h4>FLUX LoRAs</h4>
+                <div class="global-loras-grid">
+                  {#each fluxLoras as lora}
+                    {@const isSelected = formData.config.features.studio.globalLoras?.flux?.includes(lora.id) || false}
+                    <label class="global-lora-checkbox" class:selected={isSelected}>
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        on:change={() => toggleGlobalLora('flux', lora.id)}
+                      />
+                      <div class="lora-info">
+                        {#if lora.image}
+                          <img src={lora.image} alt={lora.name} class="lora-thumb" />
+                        {/if}
+                        <div class="lora-text">
+                          <span class="lora-name">{lora.name}</span>
+                          {#if lora.trigger}
+                            <span class="lora-trigger">{lora.trigger}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- SDXL LoRAs -->
+            {#if sdxlLoras.length > 0}
+              <div class="global-lora-type-section">
+                <h4>SDXL LoRAs</h4>
+                <div class="global-loras-grid">
+                  {#each sdxlLoras as lora}
+                    {@const isSelected = formData.config.features.studio.globalLoras?.sdxl?.includes(lora.id) || false}
+                    <label class="global-lora-checkbox" class:selected={isSelected}>
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        on:change={() => toggleGlobalLora('sdxl', lora.id)}
+                      />
+                      <div class="lora-info">
+                        {#if lora.image}
+                          <img src={lora.image} alt={lora.name} class="lora-thumb" />
+                        {/if}
+                        <div class="lora-text">
+                          <span class="lora-name">{lora.name}</span>
+                          {#if lora.trigger}
+                            <span class="lora-trigger">{lora.trigger}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            {#if fluxLoras.length === 0 && sdxlLoras.length === 0}
+              <p class="loras-empty">
+                No LoRAs available. <a href="/admin/loras" target="_blank">Add LoRAs</a>
+              </p>
+            {/if}
+          </div>
+        </section>
+
         <!-- Studio Tools -->
         <section class="details-section">
           <h3>🛠️ Studio Tools</h3>
@@ -776,10 +958,11 @@
                     {@const availableLoras = getLorasForTool(toolDef.id)}
                     {#if availableLoras.length > 0}
                       <div class="tool-setting-loras">
-                        <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()})</label>
+                        <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()}) - Tool-specific overrides</label>
                         <div class="loras-grid">
                           {#each availableLoras as lora}
                             {@const isSelected = isLoraEnabledForTool(toolDef.id, lora.id)}
+                            {@const isGlobal = formData.config.features.studio.globalLoras?.[toolDef.loraType]?.includes(lora.id) || false}
                             <label class="lora-checkbox" class:selected={isSelected}>
                               <input 
                                 type="checkbox" 
@@ -791,7 +974,12 @@
                                   <img src={lora.image} alt={lora.name} class="lora-thumb" />
                                 {/if}
                                 <div class="lora-text">
-                                  <span class="lora-name">{lora.name}</span>
+                                  <span class="lora-name">
+                                    {lora.name}
+                                    {#if isGlobal}
+                                      <span class="global-badge" title="Enabled globally">🌍</span>
+                                    {/if}
+                                  </span>
                                   {#if lora.trigger}
                                     <span class="lora-trigger">{lora.trigger}</span>
                                   {/if}
@@ -1434,6 +1622,68 @@
     user-select: none;
   }
 
+  /* Global LoRAs Section */
+  .global-loras-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .global-lora-type-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .global-lora-type-section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    border-left: 4px solid #3b82f6;
+  }
+
+  .global-loras-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+  }
+
+  .global-lora-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+  }
+
+  .global-lora-checkbox:hover {
+    border-color: #d1d5db;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  .global-lora-checkbox.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  }
+
+  .global-lora-checkbox input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
   /* LoRA Selection Styles */
   .tool-setting-loras {
     display: flex;
@@ -1517,6 +1767,14 @@
     font-weight: 600;
     color: #1f2937;
     line-height: 1.2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .global-badge {
+    font-size: 12px;
+    opacity: 0.8;
   }
 
   .lora-trigger {

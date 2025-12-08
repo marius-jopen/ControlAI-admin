@@ -156,7 +156,12 @@ export interface AppConfig {
           title: string;
           thumbnail?: string;
           initImage?: boolean;
+          loras?: string[];
         }>;
+        globalLoras?: {
+          flux: string[];
+          sdxl: string[];
+        };
       };
     };
     env?: {
