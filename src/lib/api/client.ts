@@ -161,6 +161,7 @@ export interface AppConfig {
     env?: {
       appName: string;
     };
+    registerPassword?: string;
   };
   created_at: string;
   updated_at: string;

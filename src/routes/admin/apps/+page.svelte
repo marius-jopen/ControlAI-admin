@@ -46,7 +46,8 @@
     },
     env: {
       appName: 'VITE_APP_NAME'
-    }
+    },
+    registerPassword: ''
   };
 
   onMount(async () => {
@@ -92,9 +93,16 @@
     hasUnsavedChanges = false;
     
     // Deep clone the config for editing
+    const clonedConfig = JSON.parse(JSON.stringify(app.config));
+    
+    // Initialize registerPassword if it doesn't exist
+    if (!clonedConfig.registerPassword) {
+      clonedConfig.registerPassword = '';
+    }
+    
     formData = {
       name: app.name,
-      config: JSON.parse(JSON.stringify(app.config))
+      config: clonedConfig
     };
   }
 
@@ -150,7 +158,8 @@
           domains: newAppData.domains.filter(d => d.trim() !== ''),
           welcome: newAppData.welcome,
           features: newAppData.features,
-          env: newAppData.env
+          env: newAppData.env,
+          registerPassword: newAppData.registerPassword
         }
       } as any);
       
@@ -217,7 +226,8 @@
       },
       env: {
         appName: 'VITE_APP_NAME'
-      }
+      },
+      registerPassword: ''
     };
   }
 
@@ -577,6 +587,24 @@
           </div>
         </section>
 
+        <!-- Registration Settings -->
+        <section class="details-section">
+          <h3>🔐 Registration Settings</h3>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>Register Password</label>
+              <input 
+                type="text" 
+                class="input" 
+                bind:value={formData.config.registerPassword}
+                on:input={markChanged}
+                placeholder="Enter registration password (optional)"
+              />
+              <small>If set, users will need this password to register for this app</small>
+            </div>
+          </div>
+        </section>
+
         <!-- Studio Tools -->
         <section class="details-section">
           <h3>🛠️ Studio Tools</h3>
@@ -796,6 +824,17 @@
           <button class="btn btn-secondary btn-sm" on:click={addNewAppDomain}>
             + Add Domain
           </button>
+        </div>
+
+        <div class="form-group">
+          <label>Register Password</label>
+          <input 
+            type="text" 
+            class="input" 
+            bind:value={newAppData.registerPassword}
+            placeholder="Registration password (optional)"
+          />
+          <small>If set, users will need this password to register</small>
         </div>
       </div>
       
