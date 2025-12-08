@@ -407,6 +407,47 @@
     const tool = formData.config.features.studio.tools[toolId];
     return tool?.loras?.includes(loraId) || false;
   }
+  
+  // Copy thumbnail URL from Limn app
+  function copyThumbnailFromLimn(toolId: string) {
+    if (!formData) return;
+    
+    // Find the Limn app
+    const limnApp = apps.find(app => app.id === 'limn');
+    
+    if (!limnApp) {
+      error = 'Limn app not found';
+      setTimeout(() => error = '', 3000);
+      return;
+    }
+    
+    // Get the tool configuration from Limn
+    const limnTool = limnApp.config.features.studio.tools[toolId];
+    
+    if (!limnTool || !limnTool.thumbnail) {
+      error = `Tool "${toolId}" has no thumbnail in Limn app`;
+      setTimeout(() => error = '', 3000);
+      return;
+    }
+    
+    // Copy the thumbnail URL to the current tool
+    if (!formData.config.features.studio.tools[toolId]) {
+      formData.config.features.studio.tools[toolId] = {
+        enabled: true,
+        title: toolId,
+        thumbnail: limnTool.thumbnail
+      };
+    } else {
+      formData.config.features.studio.tools[toolId].thumbnail = limnTool.thumbnail;
+    }
+    
+    // Trigger reactivity and mark as changed
+    formData = { ...formData };
+    markChanged();
+    
+    success = `Thumbnail URL copied from Limn for ${toolId}`;
+    setTimeout(() => success = '', 3000);
+  }
 </script>
 
 <div class="apps-management">
@@ -699,13 +740,22 @@
                       </div>
                       <div class="tool-setting">
                         <label>Thumbnail URL</label>
-                        <input 
-                          type="text" 
-                          class="input input-sm" 
-                          bind:value={tool.thumbnail}
-                          on:input={markChanged}
-                          placeholder="https://..."
-                        />
+                        <div class="thumbnail-url-row">
+                          <input 
+                            type="text" 
+                            class="input input-sm" 
+                            bind:value={tool.thumbnail}
+                            on:input={markChanged}
+                            placeholder="https://..."
+                          />
+                          <button 
+                            class="btn btn-secondary btn-sm btn-copy-limn"
+                            on:click={() => copyThumbnailFromLimn(toolDef.id)}
+                            title="Copy thumbnail URL from Limn app"
+                          >
+                            Take image from Limn
+                          </button>
+                        </div>
                       </div>
                     </div>
                     
@@ -1346,6 +1396,21 @@
     font-size: 12px;
     font-weight: 500;
     color: #6b7280;
+  }
+
+  .thumbnail-url-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .thumbnail-url-row .input {
+    flex: 1;
+  }
+
+  .btn-copy-limn {
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .checkbox-label {
