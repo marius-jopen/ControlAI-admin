@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { authStore, signOut } from '$lib/auth/store';
-  import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { goto } from "$app/navigation";
+  import { authStore, signOut } from "$lib/auth/store";
+  import { page } from "$app/stores";
+  import { onMount } from "svelte";
 
   // Redirect if not admin
-  $: if (!$authStore.loading && (!$authStore.isAuthenticated || !$authStore.isAdmin)) {
-    goto('/');
+  $: if (
+    !$authStore.loading &&
+    (!$authStore.isAuthenticated || !$authStore.isAdmin)
+  ) {
+    goto("/");
   }
 
   $: currentPath = $page.url.pathname;
@@ -14,9 +17,9 @@
   async function handleSignOut() {
     try {
       await signOut();
-      goto('/');
+      goto("/");
     } catch (error) {
-      console.error('Sign out error:', error);
+      console.error("Sign out error:", error);
     }
   }
 </script>
@@ -31,35 +34,42 @@
     <header class="admin-header">
       <div class="header-content">
         <div class="header-left">
-        <h1>🔐 ControlAI Admin</h1>
+          <h1>🔐 ControlAI Admin</h1>
           <nav class="nav-tabs">
-            <a 
-              href="/admin" 
+            <a
+              href="/admin"
               class="nav-tab"
-              class:active={currentPath === '/admin'}
+              class:active={currentPath === "/admin"}
             >
               👥 Users
             </a>
-            <a 
-              href="/admin/apps" 
+            <a
+              href="/admin/apps"
               class="nav-tab"
-              class:active={currentPath === '/admin/apps'}
+              class:active={currentPath === "/admin/apps"}
             >
               📱 Apps
             </a>
-            <a 
-              href="/admin/loras" 
+            <a
+              href="/admin/loras"
               class="nav-tab"
-              class:active={currentPath === '/admin/loras'}
+              class:active={currentPath === "/admin/loras"}
             >
               🎨 LoRAs
             </a>
-            <a 
-              href="/admin/statistics" 
+            <a
+              href="/admin/statistics"
               class="nav-tab"
-              class:active={currentPath === '/admin/statistics'}
+              class:active={currentPath === "/admin/statistics"}
             >
               📊 Statistics
+            </a>
+            <a
+              href="/admin/scheduler"
+              class="nav-tab"
+              class:active={currentPath === "/admin/scheduler"}
+            >
+              🕐 Scheduler
             </a>
           </nav>
         </div>
@@ -179,4 +189,3 @@
     background: #f9fafb;
   }
 </style>
-

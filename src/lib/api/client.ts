@@ -17,7 +17,7 @@ function getAuthToken(): string | null {
  */
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = getAuthToken();
-  
+
   if (!token) {
     throw new Error('Not authenticated');
   }
@@ -113,7 +113,7 @@ export async function getUserImages(userId: string, filters: {
 
   const queryString = params.toString();
   const url = `/api/v1/auth/admin/users/${userId}/images${queryString ? `?${queryString}` : ''}`;
-  
+
   return await fetchWithAuth(url);
 }
 
@@ -179,12 +179,12 @@ export interface AppConfig {
 export async function getAllApps(): Promise<AppConfig[]> {
   // Use direct fetch for public endpoint (no auth needed)
   const response = await fetch(`${API_URL}/api/v1/apps`);
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || error.message || 'Request failed');
   }
-  
+
   const data = await response.json();
   return data.apps;
 }
@@ -194,12 +194,12 @@ export async function getAllApps(): Promise<AppConfig[]> {
  */
 export async function getAppById(appId: string): Promise<AppConfig> {
   const response = await fetch(`${API_URL}/api/v1/apps/${appId}`);
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || error.message || 'Request failed');
   }
-  
+
   const data = await response.json();
   return data.app;
 }
@@ -212,7 +212,7 @@ export async function createApp(appData: Omit<AppConfig, 'created_at' | 'updated
     method: 'POST',
     body: JSON.stringify(appData)
   });
-  
+
   return data.app;
 }
 
@@ -224,7 +224,7 @@ export async function updateApp(appId: string, appData: Partial<Omit<AppConfig, 
     method: 'PUT',
     body: JSON.stringify(appData)
   });
-  
+
   return data.app;
 }
 
@@ -260,11 +260,11 @@ export interface Lora {
 export async function getAllLoras(type?: 'sdxl' | 'flux'): Promise<Lora[]> {
   const queryParams = type ? `?type=${type}` : '';
   const response = await fetch(`${API_URL}/api/v1/loras${queryParams}`);
-  
+
   if (!response.ok) {
     throw new Error('Failed to fetch LoRAs');
   }
-  
+
   const data = await response.json();
   return data.data;
 }
@@ -274,11 +274,11 @@ export async function getAllLoras(type?: 'sdxl' | 'flux'): Promise<Lora[]> {
  */
 export async function getLoraById(loraId: string): Promise<Lora> {
   const response = await fetch(`${API_URL}/api/v1/loras/${loraId}`);
-  
+
   if (!response.ok) {
     throw new Error('Failed to fetch LoRA');
   }
-  
+
   const data = await response.json();
   return data.data;
 }
@@ -291,7 +291,7 @@ export async function createLora(loraData: Omit<Lora, 'id' | 'created_at' | 'upd
     method: 'POST',
     body: JSON.stringify(loraData)
   });
-  
+
   return data.data;
 }
 
@@ -303,7 +303,7 @@ export async function updateLora(loraId: string, loraData: Partial<Omit<Lora, 'i
     method: 'PUT',
     body: JSON.stringify(loraData)
   });
-  
+
   return data.data;
 }
 
@@ -365,14 +365,14 @@ export async function uploadLoraImage(file: File): Promise<{
   key: string;
 }> {
   const token = getAuthToken();
-  
+
   if (!token) {
     throw new Error('Not authenticated');
   }
-  
+
   const formData = new FormData();
   formData.append('image', file);
-  
+
   const response = await fetch(`${API_URL}/api/v1/lora-images/upload`, {
     method: 'POST',
     headers: {
@@ -381,12 +381,12 @@ export async function uploadLoraImage(file: File): Promise<{
     },
     body: formData
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Upload failed' }));
     throw new Error(error.error || error.message || 'Upload failed');
   }
-  
+
   return response.json();
 }
 
@@ -412,14 +412,14 @@ export async function uploadLoraFile(file: File): Promise<{
   key: string;
 }> {
   const token = getAuthToken();
-  
+
   if (!token) {
     throw new Error('Not authenticated');
   }
-  
+
   const formData = new FormData();
   formData.append('loraFile', file);
-  
+
   const response = await fetch(`${API_URL}/api/v1/lora-files/upload`, {
     method: 'POST',
     headers: {
@@ -428,12 +428,12 @@ export async function uploadLoraFile(file: File): Promise<{
     },
     body: formData
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Upload failed' }));
     throw new Error(error.error || error.message || 'Upload failed');
   }
-  
+
   return response.json();
 }
 
@@ -450,7 +450,7 @@ export async function uploadLoraToRunPod(
   message: string;
 }> {
   const token = getAuthToken();
-  
+
   if (!token) {
     throw new Error('Not authenticated');
   }
@@ -458,7 +458,7 @@ export async function uploadLoraToRunPod(
   try {
     // Step 1: Get presigned URL for AWS S3 temp storage
     if (onLog) onLog(`📋 Requesting upload URL for ${file.name}...`);
-    
+
     const urlResponse = await fetchWithAuth('/api/v1/lora-upload/get-upload-url', {
       method: 'POST',
       body: JSON.stringify({ fileName: file.name })
@@ -469,20 +469,20 @@ export async function uploadLoraToRunPod(
     }
 
     if (onLog) onLog(`✅ Upload URL received, starting upload to temp storage...`);
-    
+
     // Step 2: Upload to AWS S3 temp storage
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      
+
       let lastPercent = 0;
-      
+
       // Track upload progress
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable && onLog) {
           const percent = Math.round((e.loaded / e.total) * 100);
           const loadedMB = (e.loaded / 1024 / 1024).toFixed(1);
           const totalMB = (e.total / 1024 / 1024).toFixed(1);
-          
+
           // Only log every 10%
           if (percent >= lastPercent + 10 || percent === 100) {
             onLog(`📤 Uploading: ${percent}% (${loadedMB}/${totalMB} MB)`);
@@ -490,7 +490,7 @@ export async function uploadLoraToRunPod(
           }
         }
       });
-      
+
       // Handle completion
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -500,16 +500,16 @@ export async function uploadLoraToRunPod(
           reject(new Error(`Upload failed with status ${xhr.status}`));
         }
       });
-      
+
       // Handle errors
       xhr.addEventListener('error', () => {
         reject(new Error('Network error during upload'));
       });
-      
+
       xhr.addEventListener('abort', () => {
         reject(new Error('Upload cancelled'));
       });
-      
+
       // Upload to AWS S3 using PUT
       xhr.open('PUT', urlResponse.uploadUrl);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -518,7 +518,7 @@ export async function uploadLoraToRunPod(
 
     // Step 3: Trigger background transfer to RunPod S3
     if (onLog) onLog(`🔄 Starting transfer to RunPod S3...`);
-    
+
     const transferResponse = await fetchWithAuth('/api/v1/lora-upload/transfer-to-runpod', {
       method: 'POST',
       body: JSON.stringify({
@@ -651,4 +651,25 @@ export interface Statistics {
  */
 export async function getStatistics(): Promise<Statistics> {
   return await fetchWithAuth('/api/v1/auth/admin/statistics');
+}
+
+// ============================================================================
+// Scheduler API Functions
+// ============================================================================
+
+/**
+ * Get scheduler configuration and status
+ */
+export async function getSchedulerConfig(): Promise<any> {
+  return await fetchWithAuth('/api/v1/scheduler');
+}
+
+/**
+ * Update scheduler configuration
+ */
+export async function saveSchedulerConfig(config: any): Promise<any> {
+  return await fetchWithAuth('/api/v1/scheduler', {
+    method: 'POST',
+    body: JSON.stringify(config)
+  });
 }
