@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { getAllUsers, getUserDetails, getUserImages, AVAILABLE_APPS, type User, type UserDetails, type ImageResource } from '$lib/api/client';
 
   let users: User[] = [];
@@ -36,6 +37,22 @@
 
   onMount(async () => {
     await loadUsers();
+    
+    // Check for URL parameters
+    const userId = $page.url.searchParams.get('userId');
+    const tool = $page.url.searchParams.get('tool');
+    
+    if (userId) {
+      const user = users.find(u => u.id === userId);
+      if (user) {
+        await selectUser(user);
+        // If tool is specified, filter by it
+        if (tool) {
+          selectedTool = tool;
+          await loadImages(user.id, selectedApp, tool, false);
+        }
+      }
+    }
   });
 
   async function loadUsers() {

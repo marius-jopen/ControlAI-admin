@@ -54,6 +54,13 @@
             >
               🎨 LoRAs
             </a>
+            <a 
+              href="/admin/statistics" 
+              class="nav-tab"
+              class:active={currentPath === '/admin/statistics'}
+            >
+              📊 Statistics
+            </a>
           </nav>
         </div>
         <div class="header-actions">

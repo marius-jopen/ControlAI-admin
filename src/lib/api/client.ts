@@ -618,3 +618,37 @@ export async function deleteLoraFromRunPod(fileName: string): Promise<{
     body: JSON.stringify({ fileName })
   });
 }
+
+// ============================================================================
+// Statistics API Functions
+// ============================================================================
+
+export interface ImageStat {
+  id: string;
+  image_url: string;
+  created_at: string;
+  user_id: string;
+  user_email: string;
+  user_name: string | null;
+  batch_name: string | null;
+  app: string;
+}
+
+export interface ToolStat {
+  tool: string;
+  count: number;
+}
+
+export interface Statistics {
+  images_by_tool: Record<string, ImageStat[]>;
+  tool_stats: ToolStat[];
+  total_images: number;
+  total_tools: number;
+}
+
+/**
+ * Get statistics about image generation grouped by tool (admin only)
+ */
+export async function getStatistics(): Promise<Statistics> {
+  return await fetchWithAuth('/api/v1/auth/admin/statistics');
+}
