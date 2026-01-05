@@ -61,6 +61,13 @@
             >
               📊 Statistics
             </a>
+            <a 
+              href="/admin/scheduler" 
+              class="nav-tab"
+              class:active={currentPath === '/admin/scheduler'}
+            >
+              ⏰ Scheduler
+            </a>
           </nav>
         </div>
         <div class="header-actions">
