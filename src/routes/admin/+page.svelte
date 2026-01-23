@@ -18,6 +18,7 @@
   let imageOffset = 0;
   let searchQuery = '';
   let imageModal: ImageResource | null = null;
+  let allUserImages: ImageResource[] = []; // Store all images for app analysis
 
   $: filteredUsers = users.filter(user => {
     if (!searchQuery) return true;
@@ -80,9 +81,10 @@
       const details = await getUserDetails(user.id);
       userDetails = details;
       
-      // Load ALL images first to get all available tools
+      // Load ALL images first to get all available tools and analyze app usage
       const allImagesResult = await getUserImages(user.id, { limit: 1000 });
-      availableTools = [...new Set(allImagesResult.images.map(img => img.tool))].sort();
+      allUserImages = allImagesResult.images;
+      availableTools = [...new Set(allUserImages.map(img => img.tool))].sort();
       
       // Then load images with current filters
       await loadImages(user.id, 'all', 'all', false);
@@ -174,6 +176,20 @@
   function closeImageModal() {
     imageModal = null;
   }
+
+  // Get apps from user's images (what they actually use)
+  $: appsFromImages = allUserImages.length > 0 ? (() => {
+    const appCounts: Record<string, number> = {};
+    allUserImages.forEach(img => {
+      appCounts[img.app] = (appCounts[img.app] || 0) + 1;
+    });
+    return Object.entries(appCounts)
+      .map(([appId, count]) => ({ appId, count }))
+      .sort((a, b) => b.count - a.count);
+  })() : [];
+  
+  $: appCount = appsFromImages.length > 0 ? appsFromImages.length : (selectedUser?.apps.length || 0);
+
 </script>
 
 <div class="admin-dashboard">
@@ -262,24 +278,55 @@
 
         <!-- Apps Section -->
         <section class="details-section">
-          <h3>Applications ({selectedUser.apps.length})</h3>
+          <h3>Applications ({appCount})</h3>
+          {#if appsFromImages.length === 0 && allUserImages.length === 0}
+            <p class="no-images-note">No images found - cannot determine which app user uses</p>
+          {/if}
           <div class="apps-grid">
-            {#each selectedUser.apps as app}
-              <div class="app-card">
-                <div class="app-header">
-                  <h4>{getAppName(app.app_id)}</h4>
-                  <span class="status-badge" class:admin={app.status === 'admin'} class:blocked={app.status === 'blocked'}>
-                    {app.status || 'active'}
-                  </span>
-                </div>
-                <div class="app-info">
-                  <div class="app-stat">
-                    <span class="stat-label">Credits</span>
-                    <span class="stat-value">{app.credits}</span>
+            {#if appsFromImages.length > 0}
+              {#each appsFromImages as appUsage}
+                {@const dbApp = selectedUser.apps.find(a => a.app_id === appUsage.appId)}
+                <div class="app-card actual-app">
+                  <div class="app-header">
+                    <div class="app-title-group">
+                      <h4>{getAppName(appUsage.appId)}</h4>
+                    </div>
+                    <span class="status-badge" class:admin={dbApp?.status === 'admin'} class:blocked={dbApp?.status === 'blocked'}>
+                      {dbApp?.status || 'active'}
+                    </span>
+                  </div>
+                  <div class="app-info">
+                    <div class="app-stat">
+                      <span class="stat-label">Images Created</span>
+                      <span class="stat-value">{appUsage.count}</span>
+                    </div>
+                    {#if dbApp}
+                      <div class="app-stat">
+                        <span class="stat-label">Credits</span>
+                        <span class="stat-value">{dbApp.credits}</span>
+                      </div>
+                    {/if}
                   </div>
                 </div>
-              </div>
-            {/each}
+              {/each}
+            {:else if selectedUser.apps.length > 0}
+              {#each selectedUser.apps as app}
+                <div class="app-card">
+                  <div class="app-header">
+                    <h4>{getAppName(app.app_id)}</h4>
+                    <span class="status-badge" class:admin={app.status === 'admin'} class:blocked={app.status === 'blocked'}>
+                      {app.status || 'active'}
+                    </span>
+                  </div>
+                  <div class="app-info">
+                    <div class="app-stat">
+                      <span class="stat-label">Credits</span>
+                      <span class="stat-value">{app.credits}</span>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            {/if}
           </div>
         </section>
 
@@ -522,6 +569,13 @@
     color: #1f2937;
   }
 
+  .no-images-note {
+    color: #6b7280;
+    font-size: 13px;
+    font-style: italic;
+    margin-bottom: 16px;
+  }
+
   .section-header {
     margin-bottom: 20px;
   }
@@ -600,6 +654,12 @@
     background: #f9fafb;
   }
 
+  .app-card.actual-app {
+    border-color: #10b981;
+    background: #f0fdf4;
+    border-width: 2px;
+  }
+
   .app-header {
     display: flex;
     justify-content: space-between;
@@ -607,11 +667,22 @@
     margin-bottom: 12px;
   }
 
+  .app-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   .app-header h4 {
     font-size: 16px;
     font-weight: 600;
     color: #1f2937;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
+
 
   .status-badge {
     padding: 4px 12px;
@@ -651,6 +722,12 @@
   .stat-value {
     font-size: 18px;
     font-weight: 600;
+    color: #1f2937;
+  }
+
+  .stat-value-small {
+    font-size: 12px;
+    font-weight: 500;
     color: #1f2937;
   }
 
