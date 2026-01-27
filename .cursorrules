@@ -17,6 +17,8 @@ This documentation covers all three repositories and the entire platform archite
 - Development setup instructions
 - Key workflows and patterns
 
+**TODO & Improvements**: See `TODO.md` in the `controlai-server` repository for tracked improvements, technical debt, and feature ideas. When implementing features or improvements, check this file first to see if there are related items to tackle.
+
 ## Project Context
 
 This is the **controlai-admin** repository - the admin dashboard for managing users across all applications.
