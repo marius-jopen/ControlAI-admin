@@ -41,3 +41,17 @@ The project consists of three repositories:
 - Admin status is verified server-side on every request
 - Follow existing patterns for API calls and error handling
 - Check server endpoints documentation for available admin operations
+
+## Documentation Maintenance
+
+**CRITICAL**: `PROJECT_DOCUMENTATION.md` (in controlai-server) is the SINGLE SOURCE OF TRUTH for the entire platform.
+
+**ALWAYS update PROJECT_DOCUMENTATION.md when you:**
+- Add/modify admin features (update Admin Panel Architecture section)
+- Change admin endpoints usage (update API Endpoints section)
+- Modify admin UI structure (update Repository Structure section)
+- Change authentication flows (update Authentication & Authorization section)
+
+**Before committing changes:**
+- Verify PROJECT_DOCUMENTATION.md reflects your changes
+- Update "Last Updated" date at bottom of document
