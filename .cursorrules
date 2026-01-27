@@ -1,0 +1,43 @@
+# ControlAI Project Rules
+
+## Important Documentation
+
+**READ FIRST**: The complete project documentation is located in the `controlai-server` repository at `PROJECT_DOCUMENTATION.md`.
+
+To access it:
+- If you have the server repo open: See `../controlai-server/PROJECT_DOCUMENTATION.md`
+- Or navigate to: `/Users/mariusjopen/Documents/GitHub/control-ai/controlai-server/PROJECT_DOCUMENTATION.md`
+
+This documentation covers all three repositories and the entire platform architecture, including:
+- Complete architecture overview
+- Database schema and relationships
+- API endpoints and authentication flows
+- Infrastructure setup (Supabase, AWS S3, RunPod, etc.)
+- Deployment configuration
+- Development setup instructions
+- Key workflows and patterns
+
+## Project Context
+
+This is the **controlai-admin** repository - the admin dashboard for managing users across all applications.
+
+The project consists of three repositories:
+- `controlai-server`: Centralized Express.js backend API
+- `controlai-client`: Multi-app SvelteKit frontend
+- `controlai-admin`: Admin dashboard (SvelteKit) (this repo)
+
+## Key Principles
+
+1. **Server-Only API**: This admin panel only communicates with the server API, never directly with Supabase
+2. **Admin Access**: Requires `status = 'admin'` in `user_app_settings` table
+3. **Authentication**: Auth flows through server API (`/api/v1/auth/login`)
+4. **Admin Endpoints**: Uses admin-only endpoints from server (`/api/v1/auth/admin/*`)
+5. **No Direct DB Access**: All database queries happen server-side
+
+## When Working on This Project
+
+- Read `PROJECT_DOCUMENTATION.md` from the server repo first for context
+- Remember: This is a thin client - all logic is in the server
+- Admin status is verified server-side on every request
+- Follow existing patterns for API calls and error handling
+- Check server endpoints documentation for available admin operations
