@@ -265,6 +265,51 @@
     }
   }
 
+  async function handleAdjustPoolCap(appId: string) {
+    if (!selectedUser) return;
+    
+    const amount = creditAdjustAmounts[appId];
+    if (!amount || amount === 0) return;
+    
+    creditAdjusting = { ...creditAdjusting, [appId]: true };
+    creditAdjustError = '';
+    creditAdjustSuccess = '';
+    
+    try {
+      const result = await adjustUserCredits(selectedUser.id, {
+        app_id: appId,
+        amount,
+        target: 'pool_cap',
+        notes: `Pool cap adjustment via admin panel`
+      });
+      
+      if (result.success) {
+        creditAdjustSuccess = `Cap bonus ${amount > 0 ? '+' : ''}${amount} applied to ${appId} (was ${result.total_before}, now ${result.total_after})`;
+        creditAdjustAmounts = { ...creditAdjustAmounts, [appId]: 0 };
+        
+        // Refresh user details
+        const details = await getUserDetails(selectedUser.id);
+        userDetails = details;
+        appCreditInfo = details.app_credit_info || {};
+        
+        // Refresh transactions
+        try {
+          const txResult = await getUserTransactions(selectedUser.id, { limit: 50 });
+          userTransactions = txResult.transactions;
+        } catch (e) {
+          // ignore
+        }
+        
+        setTimeout(() => creditAdjustSuccess = '', 4000);
+      }
+    } catch (err: any) {
+      creditAdjustError = err.message || 'Failed to adjust pool cap';
+      setTimeout(() => creditAdjustError = '', 5000);
+    } finally {
+      creditAdjusting = { ...creditAdjusting, [appId]: false };
+    }
+  }
+
   // Get apps from user's images (what they actually use)
   $: appsFromImages = allUserImages.length > 0 ? (() => {
     const appCounts: Record<string, number> = {};
@@ -416,9 +461,14 @@
                         <span class="stat-value">{(creditInfo?.user_period_usage || 0).toLocaleString()}</span>
                       </div>
                       {#if mode === 'pool_capped' && creditInfo?.pool_user_cap}
+                        {@const remaining = Math.max(0, creditInfo.pool_user_cap - (creditInfo.user_period_usage || 0))}
                         <div class="app-stat">
                           <span class="stat-label">Cap ({creditInfo.pool_user_cap_period})</span>
                           <span class="stat-value">{creditInfo.pool_user_cap.toLocaleString()}</span>
+                        </div>
+                        <div class="app-stat">
+                          <span class="stat-label">Remaining</span>
+                          <span class="stat-value" class:negative-val={remaining <= 0}>{remaining.toLocaleString()}</span>
                         </div>
                       {/if}
                     </div>
@@ -492,6 +542,29 @@
                       >
                         {creditAdjusting[app.app_id] ? '...' : 'Apply'}
                       </button>
+                    </div>
+                  </div>
+                {:else if mode === 'pool_capped'}
+                  <!-- Pool-capped: allow per-user usage adjustment -->
+                  <div class="credit-adjust-section">
+                    <div class="credit-adjust-row">
+                      <span class="credit-adjust-label">Adjust Usage</span>
+                      <input 
+                        type="number" 
+                        class="credit-adjust-input"
+                        placeholder="+/- credits"
+                        bind:value={creditAdjustAmounts[app.app_id]}
+                      />
+                      <button 
+                        class="btn btn-primary btn-sm credit-adjust-btn"
+                        on:click={() => handleAdjustPoolCap(app.app_id)}
+                        disabled={creditAdjusting[app.app_id] || !creditAdjustAmounts[app.app_id]}
+                      >
+                        {creditAdjusting[app.app_id] ? '...' : 'Apply'}
+                      </button>
+                    </div>
+                    <div class="cap-adjust-help">
+                      <strong>-</strong> simulates usage (removes credits) &nbsp;·&nbsp; <strong>+</strong> gives credits back
                     </div>
                   </div>
                 {:else}
@@ -1375,6 +1448,26 @@
     color: #64748b;
     font-style: italic;
     padding: 12px 0;
+  }
+
+  /* Cap adjust help text */
+  .cap-adjust-help {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 6px;
+  }
+
+  .cap-adjust-help strong {
+    color: #374151;
+    font-weight: 600;
+  }
+
+  /* Cap adjust label */
+  .credit-adjust-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    white-space: nowrap;
   }
 </style>
 

@@ -63,6 +63,7 @@ export interface AppCreditInfo {
   pool_user_cap: number | null;
   pool_user_cap_period: 'monthly' | 'weekly' | 'daily';
   user_period_usage?: number; // only present for pool/pool_capped modes
+  pool_cap_bonus?: number;    // per-user cap adjustment (positive = more, negative = less)
 }
 
 export interface UserDetails {
@@ -174,7 +175,7 @@ export async function getUserTransactions(userId: string, filters: {
 export async function adjustUserCredits(userId: string, params: {
   app_id: string;
   amount: number;
-  target: 'main' | 'bonus';
+  target: 'main' | 'bonus' | 'pool_cap';
   notes?: string;
 }): Promise<{ success: boolean; total_before: number; total_after: number; transaction_id: string }> {
   return await fetchWithAuth(`/api/v1/auth/admin/users/${userId}/credits`, {
