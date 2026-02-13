@@ -310,7 +310,7 @@
     }
   }
 
-  // Get apps from user's images (what they actually use)
+  // Get image counts per app (supplementary stats only, NOT for membership)
   $: appsFromImages = allUserImages.length > 0 ? (() => {
     const appCounts: Record<string, number> = {};
     allUserImages.forEach(img => {
@@ -321,7 +321,8 @@
       .sort((a, b) => b.count - a.count);
   })() : [];
   
-  $: appCount = appsFromImages.length > 0 ? appsFromImages.length : (selectedUser?.apps.length || 0);
+  // App count is always from user_app_settings (single source of truth)
+  $: appCount = selectedUser?.apps.length || 0;
 
 </script>
 
@@ -429,7 +430,7 @@
               {@const creditInfo = appCreditInfo[app.app_id]}
               {@const mode = creditInfo?.credit_mode || 'individual'}
               
-              <div class="app-card-wide" class:actual-app={imageCount > 0}>
+              <div class="app-card-wide">
                 <div class="app-card-top">
                   <div class="app-header">
                     <div class="app-title-group">
@@ -1212,11 +1213,7 @@
     overflow: hidden;
   }
 
-  .app-card-wide.actual-app {
-    border-color: #10b981;
-    background: #f0fdf4;
-    border-width: 2px;
-  }
+  /* All app cards are members via user_app_settings (single source of truth) */
 
   .app-card-top {
     padding: 16px 20px;
