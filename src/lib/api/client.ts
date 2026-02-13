@@ -620,6 +620,72 @@ export async function deleteLoraFromRunPod(fileName: string): Promise<{
 }
 
 // ============================================================================
+// Pricing Config API Functions (Admin only)
+// ============================================================================
+
+export interface PricingConfig {
+  id: string;
+  provider: string;
+  model: string;
+  display_name: string | null;
+  unit: string;  // 'per_request', 'per_1k_tokens_input', 'per_1k_tokens_output', 'per_second'
+  cost_per_unit_usd: number;
+  markup_multiplier: number;
+  fixed_credit_override: number | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Get all pricing configs (admin only)
+ */
+export async function getAllPricingConfigs(): Promise<PricingConfig[]> {
+  const data = await fetchWithAuth('/api/v1/pricing');
+  return data.data;
+}
+
+/**
+ * Get a specific pricing config by ID (admin only)
+ */
+export async function getPricingConfigById(id: string): Promise<PricingConfig> {
+  const data = await fetchWithAuth(`/api/v1/pricing/${id}`);
+  return data.data;
+}
+
+/**
+ * Create a new pricing config (admin only)
+ */
+export async function createPricingConfig(configData: Omit<PricingConfig, 'id' | 'created_at' | 'updated_at'>): Promise<PricingConfig> {
+  const data = await fetchWithAuth('/api/v1/pricing', {
+    method: 'POST',
+    body: JSON.stringify(configData)
+  });
+  return data.data;
+}
+
+/**
+ * Update a pricing config (admin only)
+ */
+export async function updatePricingConfig(id: string, configData: Partial<Omit<PricingConfig, 'id' | 'created_at' | 'updated_at'>>): Promise<PricingConfig> {
+  const data = await fetchWithAuth(`/api/v1/pricing/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(configData)
+  });
+  return data.data;
+}
+
+/**
+ * Delete a pricing config (admin only)
+ */
+export async function deletePricingConfig(id: string): Promise<void> {
+  await fetchWithAuth(`/api/v1/pricing/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+// ============================================================================
 // Statistics API Functions
 // ============================================================================
 

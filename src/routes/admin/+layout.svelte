@@ -58,6 +58,13 @@
               🎨 LoRAs
             </a>
             <a
+              href="/admin/pricing"
+              class="nav-tab"
+              class:active={currentPath === "/admin/pricing"}
+            >
+              💰 Pricing
+            </a>
+            <a
               href="/admin/statistics"
               class="nav-tab"
               class:active={currentPath === "/admin/statistics"}
