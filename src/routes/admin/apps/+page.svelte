@@ -23,6 +23,14 @@
   // Form state for selected app
   let formData: any = null;
 
+  // Credit fields (top-level DB columns, separate from config)
+  let creditMode: 'individual' | 'pool' | 'pool_capped' = 'individual';
+  let creditPool: number = 0;
+  let creditPoolAllocated: number = 0;
+  let poolUserCap: number | null = null;
+  let poolUserCapPeriod: 'monthly' | 'weekly' | 'daily' = 'monthly';
+  let creditAddAmount: number = 0;
+
   // New app form state
   let newAppData = {
     id: '',
@@ -116,6 +124,14 @@
       name: app.name,
       config: clonedConfig
     };
+
+    // Populate credit fields from top-level app columns
+    creditMode = (app.credit_mode || 'individual') as typeof creditMode;
+    creditPool = app.credit_pool || 0;
+    creditPoolAllocated = app.credit_pool_allocated || 0;
+    poolUserCap = app.pool_user_cap ?? null;
+    poolUserCapPeriod = (app.pool_user_cap_period || 'monthly') as typeof poolUserCapPeriod;
+    creditAddAmount = 0;
   }
 
   async function saveChanges() {
@@ -126,9 +142,16 @@
     success = '';
     
     try {
+      // Calculate new credit pool (add if creditAddAmount > 0)
+      const newCreditPool = creditPool + (creditAddAmount > 0 ? creditAddAmount : 0);
+
       const updated = await updateApp(selectedApp.id, {
         name: formData.name,
-        config: formData.config
+        config: formData.config,
+        credit_mode: creditMode,
+        credit_pool: newCreditPool,
+        pool_user_cap: creditMode === 'pool_capped' ? poolUserCap : null,
+        pool_user_cap_period: poolUserCapPeriod
       });
       
       // Update the local apps list
@@ -140,6 +163,14 @@
         name: updated.name,
         config: JSON.parse(JSON.stringify(updated.config))
       };
+
+      // Refresh credit fields
+      creditMode = (updated.credit_mode || 'individual') as typeof creditMode;
+      creditPool = updated.credit_pool || 0;
+      creditPoolAllocated = updated.credit_pool_allocated || 0;
+      poolUserCap = updated.pool_user_cap ?? null;
+      poolUserCapPeriod = (updated.pool_user_cap_period || 'monthly') as typeof poolUserCapPeriod;
+      creditAddAmount = 0;
       
       hasUnsavedChanges = false;
       success = 'Changes saved successfully!';
@@ -670,6 +701,158 @@
               />
             </div>
           </div>
+        </section>
+
+        <!-- Credits & Billing -->
+        <section class="details-section">
+          <h3>Credits & Billing</h3>
+          <p class="section-description">Configure how credits are distributed and charged for this app</p>
+          
+          <!-- Credit Mode Selector -->
+          <div class="credit-mode-selector">
+            <label class="credit-mode-label">Credit Mode</label>
+            <div class="credit-mode-options">
+              <label 
+                class="credit-mode-option"
+                class:selected={creditMode === 'individual'}
+              >
+                <input 
+                  type="radio" 
+                  name="credit_mode"
+                  value="individual"
+                  bind:group={creditMode}
+                  on:change={markChanged}
+                />
+                <div class="credit-mode-content">
+                  <span class="credit-mode-title">Individual</span>
+                  <span class="credit-mode-desc">Admin allocates credits to each user individually</span>
+                </div>
+              </label>
+              
+              <label 
+                class="credit-mode-option"
+                class:selected={creditMode === 'pool'}
+              >
+                <input 
+                  type="radio" 
+                  name="credit_mode"
+                  value="pool"
+                  bind:group={creditMode}
+                  on:change={markChanged}
+                />
+                <div class="credit-mode-content">
+                  <span class="credit-mode-title">Shared Pool</span>
+                  <span class="credit-mode-desc">All users share one pool of credits (no per-user limit)</span>
+                </div>
+              </label>
+              
+              <label 
+                class="credit-mode-option"
+                class:selected={creditMode === 'pool_capped'}
+              >
+                <input 
+                  type="radio" 
+                  name="credit_mode"
+                  value="pool_capped"
+                  bind:group={creditMode}
+                  on:change={markChanged}
+                />
+                <div class="credit-mode-content">
+                  <span class="credit-mode-title">Pool with Cap</span>
+                  <span class="credit-mode-desc">Shared pool, but each user has a max usage limit per period</span>
+                </div>
+              </label>
+              
+              <!-- Self Service removed — not needed until user-facing payment flow exists -->
+            </div>
+          </div>
+
+          <!-- Credit Pool Display (for pool and pool_capped modes) -->
+          {#if creditMode === 'pool' || creditMode === 'pool_capped'}
+            <div class="credit-pool-section">
+              <div class="credit-pool-stats">
+                <div class="credit-stat">
+                  <span class="credit-stat-label">Pool Balance</span>
+                  <span class="credit-stat-value" class:negative={creditPool < 0}>{creditPool.toLocaleString()}</span>
+                </div>
+                <div class="credit-stat">
+                  <span class="credit-stat-label">Allocated</span>
+                  <span class="credit-stat-value">{creditPoolAllocated.toLocaleString()}</span>
+                </div>
+                <div class="credit-stat">
+                  <span class="credit-stat-label">$ Value</span>
+                  <span class="credit-stat-value">${(creditPool * 0.01).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div class="credit-pool-topup">
+                <label>Add Credits to Pool</label>
+                <div class="topup-row">
+                  <input 
+                    type="number" 
+                    class="input input-sm" 
+                    bind:value={creditAddAmount}
+                    on:input={markChanged}
+                    placeholder="0"
+                    min="0"
+                    step="100"
+                  />
+                  <span class="topup-preview">
+                    {#if creditAddAmount > 0}
+                      New balance: {(creditPool + creditAddAmount).toLocaleString()} (${((creditPool + creditAddAmount) * 0.01).toFixed(2)})
+                    {:else}
+                      Enter amount to add
+                    {/if}
+                  </span>
+                </div>
+                <small>1 credit = $0.01 USD. Click "Save Changes" to apply.</small>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Pool User Cap (only for pool_capped mode) -->
+          {#if creditMode === 'pool_capped'}
+            <div class="credit-cap-section">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Per-User Cap (credits)</label>
+                  <input 
+                    type="number" 
+                    class="input" 
+                    bind:value={poolUserCap}
+                    on:input={markChanged}
+                    placeholder="e.g. 500"
+                    min="0"
+                  />
+                  <small>Max credits each user can spend per period</small>
+                </div>
+                <div class="form-group">
+                  <label>Cap Period</label>
+                  <select class="input" bind:value={poolUserCapPeriod} on:change={markChanged}>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                  <small>When the usage counter resets</small>
+                </div>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Individual mode info -->
+          {#if creditMode === 'individual'}
+            <div class="credit-info-box">
+              <p>In <strong>Individual</strong> mode, each user has their own credit balance. You can manage user credits from the <a href="/admin" target="_blank">Users page</a>.</p>
+              <div class="credit-pool-stats" style="margin-top: 12px;">
+                <div class="credit-stat">
+                  <span class="credit-stat-label">App Pool (unused in this mode)</span>
+                  <span class="credit-stat-value">{creditPool.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Self-service mode removed -->
         </section>
 
         <!-- Domains -->
@@ -1933,5 +2116,170 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* Credit & Billing Section */
+  .credit-mode-selector {
+    margin-bottom: 24px;
+  }
+
+  .credit-mode-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .credit-mode-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .credit-mode-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fafbfc;
+  }
+
+  .credit-mode-option:hover {
+    border-color: #d1d5db;
+    background: white;
+  }
+
+  .credit-mode-option.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+  }
+
+  .credit-mode-option input[type="radio"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
+  .credit-mode-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .credit-mode-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .credit-mode-desc {
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.4;
+  }
+
+  .credit-pool-section {
+    margin-top: 20px;
+  }
+
+  .credit-pool-stats {
+    display: flex;
+    gap: 24px;
+    padding: 16px 20px;
+    background: #f9fafb;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 16px;
+  }
+
+  .credit-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .credit-stat-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .credit-stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1f2937;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .credit-stat-value.negative {
+    color: #dc2626;
+  }
+
+  .credit-pool-topup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .credit-pool-topup label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .topup-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .topup-row input {
+    width: 160px;
+    flex-shrink: 0;
+  }
+
+  .topup-preview {
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .credit-pool-topup small {
+    font-size: 12px;
+    color: #9ca3af;
+  }
+
+  .credit-cap-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .credit-info-box {
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: #f0f9ff;
+    border-radius: 10px;
+    border: 1px solid #bae6fd;
+    font-size: 14px;
+    color: #0c4a6e;
+    line-height: 1.5;
+  }
+
+  .credit-info-box a {
+    color: #0369a1;
+    text-decoration: underline;
+    font-weight: 500;
   }
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { getAllUsers, getUserDetails, getUserImages, getUserTransactions, AVAILABLE_APPS, type User, type UserDetails, type ImageResource, type CreditTransaction } from '$lib/api/client';
+  import { getAllUsers, getUserDetails, getUserImages, getUserTransactions, adjustUserCredits, AVAILABLE_APPS, type User, type UserDetails, type ImageResource, type CreditTransaction, type AppCreditInfo } from '$lib/api/client';
 
   let users: User[] = [];
   let selectedUser: User | null = null;
@@ -21,6 +21,16 @@
   let searchQuery = '';
   let imageModal: ImageResource | null = null;
   let allUserImages: ImageResource[] = []; // Store all images for app analysis
+
+  // App credit info (credit_mode, pool, caps, period usage)
+  let appCreditInfo: Record<string, AppCreditInfo> = {};
+
+  // Credit adjustment state
+  let creditAdjustAmounts: Record<string, number> = {}; // keyed by app_id
+  let creditAdjustTargets: Record<string, 'main' | 'bonus'> = {}; // keyed by app_id
+  let creditAdjusting: Record<string, boolean> = {}; // keyed by app_id
+  let creditAdjustSuccess: string = '';
+  let creditAdjustError: string = '';
 
   $: filteredUsers = users.filter(user => {
     if (!searchQuery) return true;
@@ -81,9 +91,10 @@
     userTransactions = [];
 
     try {
-      // Load user details
+      // Load user details (includes app_credit_info with pool data)
       const details = await getUserDetails(user.id);
       userDetails = details;
+      appCreditInfo = details.app_credit_info || {};
       
       // Load ALL images first to get all available tools and analyze app usage
       const allImagesResult = await getUserImages(user.id, { limit: 1000 });
@@ -191,6 +202,69 @@
     imageModal = null;
   }
 
+  async function handleAdjustCredits(appId: string) {
+    if (!selectedUser) return;
+    
+    const amount = creditAdjustAmounts[appId];
+    if (!amount || amount === 0) return;
+    
+    const target = creditAdjustTargets[appId] || 'main';
+    
+    creditAdjusting = { ...creditAdjusting, [appId]: true };
+    creditAdjustError = '';
+    creditAdjustSuccess = '';
+    
+    try {
+      const result = await adjustUserCredits(selectedUser.id, {
+        app_id: appId,
+        amount,
+        target,
+        notes: `Admin adjustment via admin panel`
+      });
+      
+      if (result.success) {
+        creditAdjustSuccess = `${amount > 0 ? '+' : ''}${amount} credits (${target}) applied to ${appId}`;
+        creditAdjustAmounts = { ...creditAdjustAmounts, [appId]: 0 };
+        
+        // Refresh user details to show updated balances
+        const details = await getUserDetails(selectedUser.id);
+        userDetails = details;
+        appCreditInfo = details.app_credit_info || {};
+        
+        // Also refresh the selected user's app data in the sidebar list
+        const updatedUser = users.find(u => u.id === selectedUser!.id);
+        if (updatedUser && details.app_settings) {
+          // Map app_settings back to the User.apps format
+          updatedUser.apps = details.app_settings.map(s => ({
+            app_id: s.app_id,
+            status: s.status,
+            credits: s.credits,
+            bonus_credits: s.bonus_credits,
+            created_at: s.created_at,
+            updated_at: s.updated_at
+          }));
+          users = [...users]; // trigger reactivity
+          selectedUser = updatedUser;
+        }
+        
+        // Refresh transactions
+        try {
+          const txResult = await getUserTransactions(selectedUser.id, { limit: 50 });
+          userTransactions = txResult.transactions;
+        } catch (e) {
+          // ignore
+        }
+        
+        setTimeout(() => creditAdjustSuccess = '', 4000);
+      }
+    } catch (err: any) {
+      creditAdjustError = err.message || 'Failed to adjust credits';
+      setTimeout(() => creditAdjustError = '', 5000);
+    } finally {
+      creditAdjusting = { ...creditAdjusting, [appId]: false };
+    }
+  }
+
   // Get apps from user's images (what they actually use)
   $: appsFromImages = allUserImages.length > 0 ? (() => {
     const appCounts: Record<string, number> = {};
@@ -290,73 +364,143 @@
           </div>
         </section>
 
-        <!-- Apps Section -->
+        <!-- Apps & Credits Section -->
         <section class="details-section">
-          <h3>Applications ({appCount})</h3>
-          {#if appsFromImages.length === 0 && allUserImages.length === 0}
-            <p class="no-images-note">No images found - cannot determine which app user uses</p>
+          <h3>Applications & Credits ({appCount})</h3>
+          
+          {#if creditAdjustSuccess}
+            <div class="credit-alert credit-alert-success">{creditAdjustSuccess}</div>
           {/if}
-          <div class="apps-grid">
-            {#if appsFromImages.length > 0}
-              {#each appsFromImages as appUsage}
-                {@const dbApp = selectedUser.apps.find(a => a.app_id === appUsage.appId)}
-                <div class="app-card actual-app">
+          {#if creditAdjustError}
+            <div class="credit-alert credit-alert-error">{creditAdjustError}</div>
+          {/if}
+
+          {#if appsFromImages.length === 0 && allUserImages.length === 0 && selectedUser.apps.length === 0}
+            <p class="no-images-note">No apps found for this user</p>
+          {/if}
+          <div class="apps-grid-wide">
+            {#each selectedUser.apps as app}
+              {@const imageCount = appsFromImages.find(a => a.appId === app.app_id)?.count || 0}
+              {@const creditInfo = appCreditInfo[app.app_id]}
+              {@const mode = creditInfo?.credit_mode || 'individual'}
+              
+              <div class="app-card-wide" class:actual-app={imageCount > 0}>
+                <div class="app-card-top">
                   <div class="app-header">
                     <div class="app-title-group">
-                      <h4>{getAppName(appUsage.appId)}</h4>
+                      <h4>{getAppName(app.app_id)}</h4>
+                      <span class="credit-mode-badge mode-{mode}">
+                        {mode === 'individual' ? 'Individual' : mode === 'pool' ? 'Shared Pool' : 'Pool + Cap'}
+                      </span>
                     </div>
-                    <span class="status-badge" class:admin={dbApp?.status === 'admin'} class:blocked={dbApp?.status === 'blocked'}>
-                      {dbApp?.status || 'active'}
-                    </span>
-                  </div>
-                  <div class="app-info">
-                    <div class="app-stat">
-                      <span class="stat-label">Images Created</span>
-                      <span class="stat-value">{appUsage.count}</span>
-                    </div>
-                    {#if dbApp}
-                      <div class="app-stat">
-                        <span class="stat-label">Credits</span>
-                        <span class="stat-value">{dbApp.credits}</span>
-                      </div>
-                      <div class="app-stat">
-                        <span class="stat-label">Bonus Credits</span>
-                        <span class="stat-value">{dbApp.bonus_credits ?? 0}</span>
-                      </div>
-                      <div class="app-stat">
-                        <span class="stat-label">Total Balance</span>
-                        <span class="stat-value balance-total">{(dbApp.credits || 0) + (dbApp.bonus_credits ?? 0)}</span>
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-            {:else if selectedUser.apps.length > 0}
-              {#each selectedUser.apps as app}
-                <div class="app-card">
-                  <div class="app-header">
-                    <h4>{getAppName(app.app_id)}</h4>
                     <span class="status-badge" class:admin={app.status === 'admin'} class:blocked={app.status === 'blocked'}>
                       {app.status || 'active'}
                     </span>
                   </div>
-                  <div class="app-info">
-                    <div class="app-stat">
-                      <span class="stat-label">Credits</span>
-                      <span class="stat-value">{app.credits}</span>
+
+                  {#if mode === 'pool' || mode === 'pool_capped'}
+                    <!-- POOL MODE: show pool balance + user's period usage -->
+                    <div class="app-info">
+                      {#if imageCount > 0}
+                        <div class="app-stat">
+                          <span class="stat-label">Images</span>
+                          <span class="stat-value">{imageCount}</span>
+                        </div>
+                      {/if}
+                      <div class="app-stat">
+                        <span class="stat-label">Pool Balance</span>
+                        <span class="stat-value" class:negative-val={creditInfo?.credit_pool < 0}>{(creditInfo?.credit_pool || 0).toLocaleString()}</span>
+                      </div>
+                      <div class="app-stat">
+                        <span class="stat-label">Used This Period</span>
+                        <span class="stat-value">{(creditInfo?.user_period_usage || 0).toLocaleString()}</span>
+                      </div>
+                      {#if mode === 'pool_capped' && creditInfo?.pool_user_cap}
+                        <div class="app-stat">
+                          <span class="stat-label">Cap ({creditInfo.pool_user_cap_period})</span>
+                          <span class="stat-value">{creditInfo.pool_user_cap.toLocaleString()}</span>
+                        </div>
+                      {/if}
                     </div>
-                    <div class="app-stat">
-                      <span class="stat-label">Bonus Credits</span>
-                      <span class="stat-value">{app.bonus_credits ?? 0}</span>
+
+                    {#if mode === 'pool_capped' && creditInfo?.pool_user_cap}
+                      {@const usage = creditInfo.user_period_usage || 0}
+                      {@const cap = creditInfo.pool_user_cap}
+                      {@const pct = Math.min(Math.round((usage / cap) * 100), 100)}
+                      <div class="cap-progress-section">
+                        <div class="cap-progress-bar">
+                          <div 
+                            class="cap-progress-fill" 
+                            class:cap-warning={pct >= 75}
+                            class:cap-danger={pct >= 95}
+                            style="width: {pct}%"
+                          ></div>
+                        </div>
+                        <span class="cap-progress-label">
+                          {usage.toLocaleString()} / {cap.toLocaleString()} ({pct}%)
+                        </span>
+                      </div>
+                    {/if}
+
+                  {:else}
+                    <!-- INDIVIDUAL MODE: show personal credits + bonus -->
+                    <div class="app-info">
+                      {#if imageCount > 0}
+                        <div class="app-stat">
+                          <span class="stat-label">Images</span>
+                          <span class="stat-value">{imageCount}</span>
+                        </div>
+                      {/if}
+                      <div class="app-stat">
+                        <span class="stat-label">Credits</span>
+                        <span class="stat-value">{app.credits}</span>
+                      </div>
+                      <div class="app-stat">
+                        <span class="stat-label">Bonus</span>
+                        <span class="stat-value">{app.bonus_credits ?? 0}</span>
+                      </div>
+                      <div class="app-stat">
+                        <span class="stat-label">Total</span>
+                        <span class="stat-value balance-total">{(app.credits || 0) + (app.bonus_credits ?? 0)}</span>
+                      </div>
                     </div>
-                    <div class="app-stat">
-                      <span class="stat-label">Total Balance</span>
-                      <span class="stat-value balance-total">{(app.credits || 0) + (app.bonus_credits ?? 0)}</span>
+                  {/if}
+                </div>
+                
+                <!-- Credit adjustment: only for individual mode -->
+                {#if mode === 'individual'}
+                  <div class="credit-adjust-section">
+                    <div class="credit-adjust-row">
+                      <select 
+                        class="credit-adjust-select"
+                        bind:value={creditAdjustTargets[app.app_id]}
+                        on:change={() => { if (!creditAdjustTargets[app.app_id]) creditAdjustTargets[app.app_id] = 'main'; }}
+                      >
+                        <option value="main">Credits</option>
+                        <option value="bonus">Bonus Credits</option>
+                      </select>
+                      <input 
+                        type="number" 
+                        class="credit-adjust-input"
+                        placeholder="+/- amount"
+                        bind:value={creditAdjustAmounts[app.app_id]}
+                      />
+                      <button 
+                        class="btn btn-primary btn-sm credit-adjust-btn"
+                        on:click={() => handleAdjustCredits(app.app_id)}
+                        disabled={creditAdjusting[app.app_id] || !creditAdjustAmounts[app.app_id]}
+                      >
+                        {creditAdjusting[app.app_id] ? '...' : 'Apply'}
+                      </button>
                     </div>
                   </div>
-                </div>
-              {/each}
-            {/if}
+                {:else}
+                  <div class="credit-adjust-section pool-mode-note">
+                    Credits managed via pool — <a href="/admin/apps">manage in Apps</a>
+                  </div>
+                {/if}
+              </div>
+            {/each}
           </div>
         </section>
 
@@ -716,24 +860,7 @@
     border-radius: 4px;
   }
 
-  .apps-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 16px;
-  }
-
-  .app-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 16px;
-    background: #f9fafb;
-  }
-
-  .app-card.actual-app {
-    border-color: #10b981;
-    background: #f0fdf4;
-    border-width: 2px;
-  }
+  /* Legacy grid - kept for compatibility */
 
   .app-header {
     display: flex;
@@ -800,11 +927,7 @@
     color: #1f2937;
   }
 
-  .stat-value-small {
-    font-size: 12px;
-    font-weight: 500;
-    color: #1f2937;
-  }
+  /* .stat-value-small removed — unused */
 
   .filter-btn {
     padding: 6px 12px;
@@ -1000,6 +1123,172 @@
   .balance-total {
     font-weight: 700;
     color: #2563eb;
+  }
+
+  /* Wide app cards with credit adjustment */
+  .apps-grid-wide {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .app-card-wide {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f9fafb;
+    overflow: hidden;
+  }
+
+  .app-card-wide.actual-app {
+    border-color: #10b981;
+    background: #f0fdf4;
+    border-width: 2px;
+  }
+
+  .app-card-top {
+    padding: 16px 20px;
+  }
+
+  .credit-adjust-section {
+    padding: 12px 20px;
+    background: rgba(0, 0, 0, 0.03);
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .credit-adjust-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .credit-adjust-select {
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    background: white;
+    color: #374151;
+    cursor: pointer;
+  }
+
+  .credit-adjust-input {
+    width: 120px;
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    background: white;
+    color: #374151;
+  }
+
+  .credit-adjust-input::placeholder {
+    color: #9ca3af;
+  }
+
+  .credit-adjust-btn {
+    padding: 6px 16px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+
+  .credit-alert {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 16px;
+  }
+
+  .credit-alert-success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+  }
+
+  .credit-alert-error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+  }
+
+  /* Credit mode badge */
+  .credit-mode-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+
+  .credit-mode-badge.mode-individual {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+
+  .credit-mode-badge.mode-pool {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .credit-mode-badge.mode-pool_capped {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .negative-val {
+    color: #dc2626 !important;
+  }
+
+  /* Cap progress bar */
+  .cap-progress-section {
+    padding: 8px 20px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .cap-progress-bar {
+    flex: 1;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .cap-progress-fill {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+
+  .cap-progress-fill.cap-warning {
+    background: #f59e0b;
+  }
+
+  .cap-progress-fill.cap-danger {
+    background: #ef4444;
+  }
+
+  .cap-progress-label {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Pool mode note */
+  .pool-mode-note {
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .pool-mode-note a {
+    color: #3b82f6;
+    text-decoration: underline;
+    font-weight: 500;
   }
 
   /* Credit Transactions Table */

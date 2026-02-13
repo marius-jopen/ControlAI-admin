@@ -55,6 +55,16 @@ export interface User {
   latest_activity?: string | null;
 }
 
+export interface AppCreditInfo {
+  id: string;
+  credit_mode: 'individual' | 'pool' | 'pool_capped';
+  credit_pool: number;
+  credit_pool_allocated: number;
+  pool_user_cap: number | null;
+  pool_user_cap_period: 'monthly' | 'weekly' | 'daily';
+  user_period_usage?: number; // only present for pool/pool_capped modes
+}
+
 export interface UserDetails {
   user: {
     id: string;
@@ -71,6 +81,7 @@ export interface UserDetails {
     created_at: string;
     updated_at: string;
   }>;
+  app_credit_info: Record<string, AppCreditInfo>;
   latest_activity: string | null;
 }
 
@@ -158,6 +169,21 @@ export async function getUserTransactions(userId: string, filters: {
 }
 
 /**
+ * Adjust user credits (admin only)
+ */
+export async function adjustUserCredits(userId: string, params: {
+  app_id: string;
+  amount: number;
+  target: 'main' | 'bonus';
+  notes?: string;
+}): Promise<{ success: boolean; total_before: number; total_after: number; transaction_id: string }> {
+  return await fetchWithAuth(`/api/v1/auth/admin/users/${userId}/credits`, {
+    method: 'POST',
+    body: JSON.stringify(params)
+  });
+}
+
+/**
  * Get available apps from config
  */
 export const AVAILABLE_APPS = [
@@ -209,6 +235,12 @@ export interface AppConfig {
     };
     registerPassword?: string;
   };
+  // Credit/billing fields (stored as top-level DB columns, not inside config JSONB)
+  credit_mode: 'individual' | 'pool' | 'pool_capped';
+  credit_pool: number;
+  credit_pool_allocated: number;
+  pool_user_cap: number | null;
+  pool_user_cap_period: 'monthly' | 'weekly' | 'daily';
   created_at: string;
   updated_at: string;
 }
