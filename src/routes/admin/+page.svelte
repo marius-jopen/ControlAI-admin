@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { getAllUsers, getUserDetails, getUserImages, AVAILABLE_APPS, type User, type UserDetails, type ImageResource } from '$lib/api/client';
+  import { getAllUsers, getUserDetails, getUserImages, getUserTransactions, AVAILABLE_APPS, type User, type UserDetails, type ImageResource, type CreditTransaction } from '$lib/api/client';
 
   let users: User[] = [];
   let selectedUser: User | null = null;
   let userDetails: UserDetails | null = null;
   let userImages: ImageResource[] = [];
+  let userTransactions: CreditTransaction[] = [];
+  let loadingTransactions = false;
   let selectedApp: string = 'all';
   let selectedTool: string = 'all';
   let availableTools: string[] = [];
@@ -72,9 +74,11 @@
     selectedUser = user;
     loadingDetails = true;
     loadingImages = true;
+    loadingTransactions = true;
     selectedApp = 'all';
     selectedTool = 'all';
     imageOffset = 0;
+    userTransactions = [];
 
     try {
       // Load user details
@@ -88,10 +92,20 @@
       
       // Then load images with current filters
       await loadImages(user.id, 'all', 'all', false);
+
+      // Load credit transactions
+      try {
+        const txResult = await getUserTransactions(user.id, { limit: 50 });
+        userTransactions = txResult.transactions;
+      } catch (txErr) {
+        console.error('Error loading transactions:', txErr);
+        userTransactions = [];
+      }
     } catch (error) {
       console.error('Error loading user details:', error);
     } finally {
       loadingDetails = false;
+      loadingTransactions = false;
     }
   }
 
@@ -305,6 +319,14 @@
                         <span class="stat-label">Credits</span>
                         <span class="stat-value">{dbApp.credits}</span>
                       </div>
+                      <div class="app-stat">
+                        <span class="stat-label">Bonus Credits</span>
+                        <span class="stat-value">{dbApp.bonus_credits ?? 0}</span>
+                      </div>
+                      <div class="app-stat">
+                        <span class="stat-label">Total Balance</span>
+                        <span class="stat-value balance-total">{(dbApp.credits || 0) + (dbApp.bonus_credits ?? 0)}</span>
+                      </div>
                     {/if}
                   </div>
                 </div>
@@ -323,11 +345,64 @@
                       <span class="stat-label">Credits</span>
                       <span class="stat-value">{app.credits}</span>
                     </div>
+                    <div class="app-stat">
+                      <span class="stat-label">Bonus Credits</span>
+                      <span class="stat-value">{app.bonus_credits ?? 0}</span>
+                    </div>
+                    <div class="app-stat">
+                      <span class="stat-label">Total Balance</span>
+                      <span class="stat-value balance-total">{(app.credits || 0) + (app.bonus_credits ?? 0)}</span>
+                    </div>
                   </div>
                 </div>
               {/each}
             {/if}
           </div>
+        </section>
+
+        <!-- Credit Transactions Section -->
+        <section class="details-section">
+          <h3>Credit Transactions ({userTransactions.length})</h3>
+          {#if loadingTransactions}
+            <p class="loading-text">Loading transactions...</p>
+          {:else if userTransactions.length === 0}
+            <p class="no-images-note">No credit transactions yet</p>
+          {:else}
+            <div class="transactions-table-wrapper">
+              <table class="transactions-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Provider</th>
+                    <th>Model</th>
+                    <th>Amount</th>
+                    <th>Balance</th>
+                    <th>App</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each userTransactions as tx}
+                    <tr class:charge={tx.amount < 0} class:topup={tx.amount > 0}>
+                      <td class="tx-date">{new Date(tx.created_at).toLocaleDateString()} {new Date(tx.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                      <td>
+                        <span class="tx-type-badge" class:generation={tx.transaction_type === 'generation_charge'} class:topup-badge={tx.transaction_type === 'topup'} class:adjustment={tx.transaction_type === 'admin_adjustment'}>
+                          {tx.transaction_type === 'generation_charge' ? 'Generation' : tx.transaction_type === 'topup' ? 'Top-up' : tx.transaction_type === 'admin_adjustment' ? 'Adjustment' : tx.transaction_type}
+                        </span>
+                      </td>
+                      <td>{tx.provider || '—'}</td>
+                      <td>{tx.model || '—'}{tx.resolution ? ` (${tx.resolution})` : ''}</td>
+                      <td class="tx-amount" class:negative={tx.amount < 0} class:positive={tx.amount > 0}>
+                        {tx.amount > 0 ? '+' : ''}{tx.amount}
+                      </td>
+                      <td class="tx-balance">{tx.balance_after}</td>
+                      <td>{tx.app_id}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
         </section>
 
         <!-- Images Section -->
@@ -919,6 +994,98 @@
     font-size: 14px;
     max-width: 400px;
     text-align: center;
+  }
+
+  /* Balance total highlight */
+  .balance-total {
+    font-weight: 700;
+    color: #2563eb;
+  }
+
+  /* Credit Transactions Table */
+  .transactions-table-wrapper {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .transactions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  .transactions-table th {
+    background: #f8fafc;
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #475569;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+  }
+
+  .transactions-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+  }
+
+  .transactions-table tbody tr:hover {
+    background: #f8fafc;
+  }
+
+  .tx-date {
+    white-space: nowrap;
+    color: #64748b;
+    font-size: 0.8rem;
+  }
+
+  .tx-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .tx-type-badge.generation {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .tx-type-badge.topup-badge {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .tx-type-badge.adjustment {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+
+  .tx-amount {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tx-amount.negative {
+    color: #dc2626;
+  }
+
+  .tx-amount.positive {
+    color: #16a34a;
+  }
+
+  .tx-balance {
+    font-variant-numeric: tabular-nums;
+    color: #64748b;
+  }
+
+  .loading-text {
+    color: #64748b;
+    font-style: italic;
+    padding: 12px 0;
   }
 </style>
 

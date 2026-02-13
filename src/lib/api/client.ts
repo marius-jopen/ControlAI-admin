@@ -48,6 +48,7 @@ export interface User {
     app_id: string;
     status: string;
     credits: number;
+    bonus_credits: number;
     created_at: string;
     updated_at: string;
   }>;
@@ -66,6 +67,7 @@ export interface UserDetails {
     app_id: string;
     status: string;
     credits: number;
+    bonus_credits: number;
     created_at: string;
     updated_at: string;
   }>;
@@ -79,6 +81,25 @@ export interface ImageResource {
   batch_name: string;
   created_at: string;
   app: string;
+}
+
+export interface CreditTransaction {
+  id: string;
+  user_id: string;
+  app_id: string;
+  transaction_type: string;  // 'generation_charge', 'topup', 'admin_adjustment', 'pool_allocation'
+  amount: number;            // negative = deduction, positive = topup
+  balance_before: number;
+  balance_after: number;
+  provider: string | null;
+  model: string | null;
+  resolution: string | null;
+  execution_time_ms: number | null;
+  cost_usd: number | null;
+  resource_id: string | null;
+  pricing_config_id: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
 /**
@@ -113,6 +134,25 @@ export async function getUserImages(userId: string, filters: {
 
   const queryString = params.toString();
   const url = `/api/v1/auth/admin/users/${userId}/images${queryString ? `?${queryString}` : ''}`;
+
+  return await fetchWithAuth(url);
+}
+
+/**
+ * Get user's credit transactions (admin only)
+ */
+export async function getUserTransactions(userId: string, filters: {
+  app?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<{ transactions: CreditTransaction[]; has_more: boolean }> {
+  const params = new URLSearchParams();
+  if (filters.app) params.append('app', filters.app);
+  if (filters.limit) params.append('limit', filters.limit.toString());
+  if (filters.offset) params.append('offset', filters.offset.toString());
+
+  const queryString = params.toString();
+  const url = `/api/v1/auth/admin/users/${userId}/transactions${queryString ? `?${queryString}` : ''}`;
 
   return await fetchWithAuth(url);
 }
