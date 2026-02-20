@@ -759,6 +759,70 @@ export async function deletePricingConfig(id: string): Promise<void> {
 }
 
 // ============================================================================
+// Batch Download API Functions (Admin only)
+// ============================================================================
+
+export interface BatchDownloadPreview {
+  success: boolean;
+  toolCounts: Record<string, number>;
+  totalDownloadable: number;
+  totalInDb: number;
+}
+
+export interface BatchDownloadResult {
+  success: boolean;
+  downloadUrl: string;
+  totalFiles: number;
+  failedFiles: number;
+  zipKey: string;
+}
+
+/**
+ * Preview batch download - returns per-tool image counts (admin only)
+ */
+export async function previewBatchDownload(userId: string, params: {
+  tools: string[];
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<BatchDownloadPreview> {
+  return await fetchWithAuth(`/api/v1/auth/admin/users/${userId}/download-preview`, {
+    method: 'POST',
+    body: JSON.stringify(params)
+  });
+}
+
+/**
+ * Request a batch download of user images as a zip file (admin only)
+ */
+export async function createBatchDownload(userId: string, params: {
+  tools: string[];
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<BatchDownloadResult> {
+  const token = getAuthToken();
+
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const response = await fetch(`${API_URL}/api/v1/auth/admin/users/${userId}/download`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(params)
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || error.message || 'Download request failed');
+  }
+
+  return response.json();
+}
+
+// ============================================================================
 // Statistics API Functions
 // ============================================================================
 

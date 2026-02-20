@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { getAllUsers, getUserDetails, getUserImages, getUserTransactions, adjustUserCredits, AVAILABLE_APPS, type User, type UserDetails, type ImageResource, type CreditTransaction, type AppCreditInfo } from '$lib/api/client';
+  import { getAllUsers, getUserDetails, getUserImages, getUserTransactions, adjustUserCredits, previewBatchDownload, createBatchDownload, AVAILABLE_APPS, type User, type UserDetails, type ImageResource, type CreditTransaction, type AppCreditInfo, type BatchDownloadPreview } from '$lib/api/client';
 
   let users: User[] = [];
   let selectedUser: User | null = null;
@@ -23,7 +23,18 @@
   let allUserImages: ImageResource[] = [];
 
   // Tabs
-  let activeTab: 'info' | 'credits' | 'images' | 'transactions' = 'info';
+  let activeTab: 'info' | 'credits' | 'images' | 'transactions' | 'download' = 'info';
+
+  // Download state
+  let downloadSelectedTools: Set<string> = new Set();
+  let downloadDateFrom = '';
+  let downloadDateTo = '';
+  let downloadPreviewLoading = false;
+  let downloadLoading = false;
+  let downloadUrl = '';
+  let downloadError = '';
+  let downloadPreview: BatchDownloadPreview | null = null;
+  let downloadResult: { totalFiles: number; failedFiles: number } | null = null;
 
   // App credit info
   let appCreditInfo: Record<string, AppCreditInfo> = {};
@@ -84,6 +95,13 @@
     selectedTool = 'all';
     imageOffset = 0;
     userTransactions = [];
+    downloadSelectedTools = new Set();
+    downloadDateFrom = '';
+    downloadDateTo = '';
+    downloadUrl = '';
+    downloadError = '';
+    downloadPreview = null;
+    downloadResult = null;
 
     try {
       const details = await getUserDetails(user.id);
@@ -242,6 +260,90 @@
     }
   }
 
+  function resetDownloadPreview() {
+    downloadPreview = null;
+    downloadUrl = '';
+    downloadResult = null;
+    downloadError = '';
+  }
+
+  function toggleDownloadTool(tool: string) {
+    if (downloadSelectedTools.has(tool)) {
+      downloadSelectedTools.delete(tool);
+    } else {
+      downloadSelectedTools.add(tool);
+    }
+    downloadSelectedTools = new Set(downloadSelectedTools);
+    resetDownloadPreview();
+  }
+
+  function selectAllTools() {
+    downloadSelectedTools = new Set(availableTools);
+    resetDownloadPreview();
+  }
+
+  function deselectAllTools() {
+    downloadSelectedTools = new Set();
+    resetDownloadPreview();
+  }
+
+  async function handlePreviewDownload() {
+    if (!selectedUser || downloadSelectedTools.size === 0) return;
+    downloadPreviewLoading = true;
+    downloadError = '';
+    downloadUrl = '';
+    downloadResult = null;
+    downloadPreview = null;
+
+    try {
+      const result = await previewBatchDownload(selectedUser.id, {
+        tools: Array.from(downloadSelectedTools),
+        dateFrom: downloadDateFrom || undefined,
+        dateTo: downloadDateTo || undefined
+      });
+
+      if (result.success) {
+        downloadPreview = result;
+      } else {
+        downloadError = 'Preview failed';
+      }
+    } catch (err: any) {
+      downloadError = err.message || 'Failed to preview download';
+    } finally {
+      downloadPreviewLoading = false;
+    }
+  }
+
+  async function handleBatchDownload() {
+    if (!selectedUser || downloadSelectedTools.size === 0) return;
+    downloadLoading = true;
+    downloadError = '';
+    downloadUrl = '';
+    downloadResult = null;
+
+    try {
+      const result = await createBatchDownload(selectedUser.id, {
+        tools: Array.from(downloadSelectedTools),
+        dateFrom: downloadDateFrom || undefined,
+        dateTo: downloadDateTo || undefined
+      });
+
+      if (result.success) {
+        downloadUrl = result.downloadUrl;
+        downloadResult = {
+          totalFiles: result.totalFiles,
+          failedFiles: result.failedFiles
+        };
+      } else {
+        downloadError = 'Download preparation failed';
+      }
+    } catch (err: any) {
+      downloadError = err.message || 'Failed to prepare download';
+    } finally {
+      downloadLoading = false;
+    }
+  }
+
   // Image counts per app (supplementary stats only)
   $: appsFromImages = allUserImages.length > 0 ? (() => {
     const appCounts: Record<string, number> = {};
@@ -320,6 +422,9 @@
         </button>
         <button class="tab-btn" class:active={activeTab === 'transactions'} on:click={() => activeTab = 'transactions'}>
           Transactions ({userTransactions.length})
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'download'} on:click={() => activeTab = 'download'}>
+          Download
         </button>
       </div>
 
@@ -617,6 +722,134 @@
                 </table>
               </div>
             {/if}
+          </section>
+
+        <!-- DOWNLOAD TAB -->
+        {:else if activeTab === 'download'}
+          <section class="details-section">
+            <h3>Batch Download Images</h3>
+            <p class="download-description">
+              Select tools and an optional date range, then click "Preview Download" to see how many images will be included. The zip will be organized in subfolders by tool.
+            </p>
+
+            <div class="download-form">
+              <div class="download-section">
+                <div class="download-section-header">
+                  <label class="download-label">Select Tools</label>
+                  <div class="download-select-actions">
+                    <button class="btn-link" on:click={selectAllTools}>Select All</button>
+                    <span class="separator">|</span>
+                    <button class="btn-link" on:click={deselectAllTools}>Deselect All</button>
+                  </div>
+                </div>
+                {#if availableTools.length === 0}
+                  <p class="no-data-note">No tools available for this user</p>
+                {:else}
+                  <div class="download-tools-grid">
+                    {#each availableTools as tool}
+                      {@const toolImageCount = allUserImages.filter(img => img.tool === tool).length}
+                      <label class="download-tool-checkbox" class:checked={downloadSelectedTools.has(tool)}>
+                        <input
+                          type="checkbox"
+                          checked={downloadSelectedTools.has(tool)}
+                          on:change={() => toggleDownloadTool(tool)}
+                        />
+                        <span class="tool-name">{tool}</span>
+                        <span class="tool-count">{toolImageCount}</span>
+                      </label>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
+              <div class="download-section">
+                <label class="download-label">Date Range (optional)</label>
+                <div class="download-date-row">
+                  <div class="date-input-group">
+                    <label class="date-sublabel">From</label>
+                    <input type="date" class="date-input" bind:value={downloadDateFrom} on:change={resetDownloadPreview} />
+                  </div>
+                  <div class="date-input-group">
+                    <label class="date-sublabel">To</label>
+                    <input type="date" class="date-input" bind:value={downloadDateTo} on:change={resetDownloadPreview} />
+                  </div>
+                  {#if downloadDateFrom || downloadDateTo}
+                    <button class="btn-link" on:click={() => { downloadDateFrom = ''; downloadDateTo = ''; resetDownloadPreview(); }}>
+                      Clear dates
+                    </button>
+                  {/if}
+                </div>
+              </div>
+
+              {#if downloadError}
+                <div class="credit-alert credit-alert-error">{downloadError}</div>
+              {/if}
+
+              {#if !downloadPreview && !downloadUrl}
+                <button
+                  class="btn btn-primary download-btn"
+                  on:click={handlePreviewDownload}
+                  disabled={downloadPreviewLoading || downloadSelectedTools.size === 0}
+                >
+                  {#if downloadPreviewLoading}
+                    <span class="loading-spinner-inline"></span>
+                    Loading preview...
+                  {:else}
+                    Preview Download
+                  {/if}
+                </button>
+              {/if}
+
+              {#if downloadPreview && !downloadUrl}
+                <div class="download-preview">
+                  <div class="download-preview-header">
+                    <h4>Download Preview</h4>
+                    <span class="download-preview-total">{downloadPreview.totalDownloadable} image{downloadPreview.totalDownloadable !== 1 ? 's' : ''} total</span>
+                  </div>
+                  {#if Object.keys(downloadPreview.toolCounts).length === 0}
+                    <p class="no-data-note">No generated images found for the selected filters.</p>
+                  {:else}
+                    <div class="download-preview-table">
+                      {#each Object.entries(downloadPreview.toolCounts).sort((a, b) => b[1] - a[1]) as [tool, count]}
+                        <div class="download-preview-row">
+                          <span class="preview-tool-name">{tool}/</span>
+                          <span class="preview-tool-count">{count} image{count !== 1 ? 's' : ''}</span>
+                        </div>
+                      {/each}
+                    </div>
+                    <button
+                      class="btn btn-primary download-btn"
+                      on:click={handleBatchDownload}
+                      disabled={downloadLoading}
+                    >
+                      {#if downloadLoading}
+                        <span class="loading-spinner-inline"></span>
+                        Creating ZIP...
+                      {:else}
+                        Create & Download ZIP ({downloadPreview.totalDownloadable} images)
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+              {/if}
+
+              {#if downloadUrl && downloadResult}
+                <div class="download-success">
+                  <div class="download-success-info">
+                    <span class="download-success-icon">&#10003;</span>
+                    <span>
+                      Zip ready: {downloadResult.totalFiles} image{downloadResult.totalFiles !== 1 ? 's' : ''} packaged
+                      {#if downloadResult.failedFiles > 0}
+                        ({downloadResult.failedFiles} failed)
+                      {/if}
+                    </span>
+                  </div>
+                  <a href={downloadUrl} class="btn btn-primary download-link" target="_blank" rel="noopener noreferrer">
+                    Download ZIP
+                  </a>
+                </div>
+              {/if}
+            </div>
           </section>
         {/if}
       </div>
@@ -1258,4 +1491,292 @@
   .empty-icon { font-size: 56px; margin-bottom: 16px; }
   .empty-state-large h3 { font-size: 18px; color: #1f2937; margin-bottom: 8px; }
   .empty-state-large p { font-size: 14px; max-width: 360px; text-align: center; }
+
+  /* ===== Download Tab ===== */
+  .download-description {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+
+  .download-form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .download-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .download-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .download-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .download-select-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .btn-link {
+    background: none;
+    border: none;
+    color: #3b82f6;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    font-weight: 500;
+  }
+
+  .btn-link:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+  }
+
+  .separator {
+    color: #d1d5db;
+    font-size: 12px;
+  }
+
+  .download-tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+  }
+
+  .download-tool-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: white;
+    font-size: 13px;
+  }
+
+  .download-tool-checkbox:hover {
+    border-color: #93c5fd;
+    background: #f8faff;
+  }
+
+  .download-tool-checkbox.checked {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+
+  .download-tool-checkbox input[type="checkbox"] {
+    accent-color: #3b82f6;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+  }
+
+  .download-tool-checkbox .tool-name {
+    flex: 1;
+    color: #1f2937;
+    font-weight: 500;
+  }
+
+  .download-tool-checkbox .tool-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 1px 7px;
+    border-radius: 10px;
+  }
+
+  .download-tool-checkbox.checked .tool-count {
+    background: #dbeafe;
+    color: #2563eb;
+  }
+
+  .download-date-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+  }
+
+  .date-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .date-sublabel {
+    font-size: 11px;
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  .date-input {
+    padding: 7px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    background: white;
+    color: #1f2937;
+    min-width: 160px;
+  }
+
+  .date-input:focus {
+    border-color: #3b82f6;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  }
+
+  .download-summary {
+    padding: 10px 14px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .download-summary-text {
+    font-size: 13px;
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  .download-preview {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: white;
+    overflow: hidden;
+  }
+
+  .download-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .download-preview-header h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+  }
+
+  .download-preview-total {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2563eb;
+  }
+
+  .download-preview-table {
+    padding: 8px 0;
+  }
+
+  .download-preview-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 18px;
+  }
+
+  .download-preview-row:not(:last-child) {
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .preview-tool-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1f2937;
+    font-family: monospace;
+  }
+
+  .preview-tool-count {
+    font-size: 13px;
+    color: #6b7280;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .download-preview .download-btn {
+    margin: 12px 18px 16px;
+  }
+
+  .download-success {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 10px;
+  }
+
+  .download-success-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: #166534;
+    font-weight: 500;
+  }
+
+  .download-success-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: #22c55e;
+    color: white;
+    border-radius: 50%;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .download-link {
+    text-decoration: none;
+    padding: 8px 20px !important;
+    font-size: 13px !important;
+    flex-shrink: 0;
+  }
+
+  .download-btn {
+    align-self: flex-start;
+    padding: 10px 28px !important;
+    font-size: 14px !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .download-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .loading-spinner-inline {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
 </style>
