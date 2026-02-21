@@ -662,8 +662,8 @@
                   <label>App:</label>
                   <div class="app-filter">
                     <button class="filter-btn" class:active={selectedApp === 'all'} on:click={() => handleAppFilter('all')}>All Apps</button>
-                    {#each AVAILABLE_APPS as app}
-                      <button class="filter-btn" class:active={selectedApp === app.id} on:click={() => handleAppFilter(app.id)}>{app.name}</button>
+                    {#each selectedUser.apps as app}
+                      <button class="filter-btn" class:active={selectedApp === app.app_id} on:click={() => handleAppFilter(app.app_id)}>{getAppName(app.app_id)}</button>
                     {/each}
                   </div>
                 </div>
