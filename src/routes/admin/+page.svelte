@@ -384,8 +384,14 @@
             class:active={selectedUser?.id === user.id}
             on:click={() => selectUser(user)}
           >
-            <span class="user-name">{user.full_name || user.email || 'Unknown'}</span>
-            <span class="user-apps-count">{user.apps.length}</span>
+            <div class="user-item-info">
+              <span class="user-name">{user.full_name || user.email || 'Unknown'}</span>
+              <div class="user-app-tags">
+                {#each user.apps as app}
+                  <span class="app-tag app-tag-{app.app_id}">{app.app_id}</span>
+                {/each}
+              </div>
+            </div>
           </button>
         {/each}
       {/if}
@@ -457,13 +463,41 @@
                 </div>
               {/if}
               <div class="info-item">
-                <label>Apps</label>
-                <div class="info-value">{selectedUser.apps.map(a => getAppName(a.app_id)).join(', ') || 'None'}</div>
-              </div>
-              <div class="info-item">
                 <label>Total Images</label>
                 <div class="info-value">{allUserImages.length}</div>
               </div>
+            </div>
+
+            <h3 style="margin-top: 24px;">Registered Apps ({selectedUser.apps.length})</h3>
+            <div class="app-cards-grid">
+              {#each selectedUser.apps as app}
+                <div class="app-card">
+                  <div class="app-card-header">
+                    <span class="app-card-name">{getAppName(app.app_id)}</span>
+                    <span class="app-card-status" class:status-admin={app.status === 'admin'} class:status-active={app.status === 'active'} class:status-blocked={app.status === 'blocked'}>
+                      {app.status || 'active'}
+                    </span>
+                  </div>
+                  <div class="app-card-details">
+                    <div class="app-card-detail">
+                      <span class="app-card-label">App ID</span>
+                      <span class="app-card-value code">{app.app_id}</span>
+                    </div>
+                    <div class="app-card-detail">
+                      <span class="app-card-label">Joined</span>
+                      <span class="app-card-value">{formatDate(app.created_at)}</span>
+                    </div>
+                    <div class="app-card-detail">
+                      <span class="app-card-label">Credits</span>
+                      <span class="app-card-value">{app.credits ?? 0} + {app.bonus_credits ?? 0} bonus</span>
+                    </div>
+                  </div>
+                </div>
+              {:else}
+                <div class="app-card" style="text-align: center; color: #6b7280;">
+                  No apps registered
+                </div>
+              {/each}
             </div>
           </section>
 
@@ -925,8 +959,7 @@
   .user-item {
     width: 100%;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-start;
     gap: 6px;
     padding: 7px 10px;
     border: 1px solid transparent;
@@ -939,6 +972,11 @@
     font-size: 13px;
   }
 
+  .user-item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
   .user-item:hover {
     background: #f3f4f6;
   }
@@ -949,8 +987,7 @@
   }
 
   .user-item .user-name {
-    flex: 1;
-    min-width: 0;
+    display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -958,19 +995,109 @@
     font-weight: 500;
   }
 
-  .user-apps-count {
-    flex-shrink: 0;
-    font-size: 11px;
-    font-weight: 600;
-    color: #6b7280;
-    background: #f3f4f6;
-    padding: 1px 6px;
-    border-radius: 10px;
+  .user-app-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 3px;
   }
 
-  .user-item.active .user-apps-count {
+  .app-tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #f3f4f6;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .app-tag-limn { background: #dbeafe; color: #1d4ed8; }
+  .app-tag-ifm { background: #fef3c7; color: #92400e; }
+  .app-tag-celine { background: #fce7f3; color: #9d174d; }
+  .app-tag-thelios { background: #d1fae5; color: #065f46; }
+  .app-tag-guests { background: #e5e7eb; color: #374151; }
+  .app-tag-jopen { background: #ede9fe; color: #5b21b6; }
+
+  /* ===== App Cards (Info Tab) ===== */
+  .app-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .app-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .app-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .app-card-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .app-card-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: capitalize;
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+
+  .app-card-status.status-admin {
     background: #dbeafe;
-    color: #2563eb;
+    color: #1d4ed8;
+  }
+
+  .app-card-status.status-active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .app-card-status.status-blocked {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .app-card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .app-card-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+  }
+
+  .app-card-label {
+    color: #6b7280;
+  }
+
+  .app-card-value {
+    color: #1f2937;
+    font-weight: 500;
+  }
+
+  .app-card-value.code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
   }
 
   /* ===== User Details Panel ===== */
