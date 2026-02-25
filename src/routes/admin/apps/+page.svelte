@@ -772,6 +772,25 @@
 
           <!-- Credit Pool Display (for pool and pool_capped modes) -->
           {#if creditMode === 'pool' || creditMode === 'pool_capped'}
+            <!-- Pool alerts -->
+            {#if creditPool <= 0}
+              <div class="pool-alert pool-alert-critical">
+                <strong>Pool exhausted</strong> — Users can no longer generate. Add credits immediately.
+              </div>
+            {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.05}
+              <div class="pool-alert pool-alert-critical">
+                <strong>Critical: Pool below 5%</strong> — Only {creditPool.toLocaleString()} credits remaining (${(creditPool * 0.01).toFixed(2)}).
+              </div>
+            {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.2}
+              <div class="pool-alert pool-alert-low">
+                <strong>Low pool balance</strong> — {creditPool.toLocaleString()} credits remaining ({Math.round(creditPool / creditPoolAllocated * 100)}% of allocated).
+              </div>
+            {:else if creditPool < 100}
+              <div class="pool-alert pool-alert-low">
+                <strong>Low pool balance</strong> — Only {creditPool.toLocaleString()} credits remaining.
+              </div>
+            {/if}
+
             <div class="credit-pool-section">
               <div class="credit-pool-stats">
                 <div class="credit-stat">
@@ -2228,6 +2247,30 @@
 
   .credit-stat-value.negative {
     color: #dc2626;
+  }
+
+  .pool-alert {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+    margin-bottom: 12px;
+  }
+
+  .pool-alert strong {
+    font-weight: 600;
+  }
+
+  .pool-alert-low {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    color: #92400e;
+  }
+
+  .pool-alert-critical {
+    background: #fee2e2;
+    border: 1px solid #ef4444;
+    color: #991b1b;
   }
 
   .credit-pool-topup {
