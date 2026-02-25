@@ -768,6 +768,39 @@
               
               <!-- Self Service removed — not needed until user-facing payment flow exists -->
             </div>
+
+            <!-- How it works explanation -->
+            <div class="credit-explainer">
+              {#if creditMode === 'individual'}
+                <h4>How Individual mode works</h4>
+                <ul>
+                  <li><strong>Each user has their own credit balance</strong> — set by you on the Users page.</li>
+                  <li>When a user generates an image, credits are deducted from their personal balance.</li>
+                  <li>Deduction order: <em>allocated credits</em> are used first, then <em>bonus credits</em>.</li>
+                  <li>When their balance reaches 0, they can no longer generate until you add more.</li>
+                  <li>Users can see their own balance in the header. They cannot see other users' balances.</li>
+                </ul>
+              {:else if creditMode === 'pool'}
+                <h4>How Shared Pool mode works</h4>
+                <ul>
+                  <li><strong>All users share one credit pool</strong> — the "Pool Balance" below.</li>
+                  <li>When any user generates, credits are deducted from this shared pool.</li>
+                  <li>There is <strong>no per-user limit</strong> — any user can use as many credits as the pool allows.</li>
+                  <li>When the pool hits 0, <strong>all users</strong> are blocked from generating.</li>
+                  <li>To refill, add credits using "Add Credits to Pool" below and save.</li>
+                </ul>
+              {:else if creditMode === 'pool_capped'}
+                <h4>How Pool with Cap mode works</h4>
+                <ul>
+                  <li><strong>All users share one credit pool</strong>, but each user has a <strong>spending limit per period</strong>.</li>
+                  <li>The "Per-User Cap" (e.g. 2,000) is the maximum credits one user can spend per period (daily/weekly/monthly).</li>
+                  <li>When the period resets (e.g. start of each month), every user's usage counter goes back to 0.</li>
+                  <li>A user is blocked when they hit their cap OR when the pool runs out — whichever comes first.</li>
+                  <li>On the Users page, you can adjust a user's usage within the current period (e.g. give back credits they wasted on a failed generation).</li>
+                  <li>To refill the pool, add credits below and save. The per-user caps are not affected.</li>
+                </ul>
+              {/if}
+            </div>
           </div>
 
           <!-- Credit Pool Display (for pool and pool_capped modes) -->
@@ -2247,6 +2280,38 @@
 
   .credit-stat-value.negative {
     color: #dc2626;
+  }
+
+  .credit-explainer {
+    margin-top: 16px;
+    padding: 16px 20px;
+    border-radius: 10px;
+    background: #f0f4ff;
+    border: 1px solid #c7d2fe;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #1e3a5f;
+  }
+
+  .credit-explainer h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e40af;
+  }
+
+  .credit-explainer ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  .credit-explainer li {
+    margin-bottom: 4px;
+  }
+
+  .credit-explainer em {
+    font-style: italic;
+    color: #4338ca;
   }
 
   .pool-alert {
