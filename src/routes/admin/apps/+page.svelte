@@ -447,7 +447,8 @@
     { id: 'latent-shift', name: 'Latent Shift', loraType: 'sdxl' },
     { id: 'latent-scroll', name: 'Latent Scroll', loraType: 'sdxl' },
     { id: 'latent-click', name: 'Latent Click', loraType: 'sdxl' },
-    { id: 'paint-edit', name: 'Paint Edit', loraType: null }
+    { id: 'paint-edit', name: 'Paint Edit', loraType: null },
+    { id: 'video-journey', name: 'Video Journey', loraType: null }
   ];
   
   // Get available LoRAs for a specific tool
