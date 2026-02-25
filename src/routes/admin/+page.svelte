@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { getAllUsers, getUserDetails, getUserImages, getUserTransactions, adjustUserCredits, previewBatchDownload, createBatchDownload, AVAILABLE_APPS, type User, type UserDetails, type ImageResource, type CreditTransaction, type AppCreditInfo, type BatchDownloadPreview } from '$lib/api/client';
+  import { createLogger } from '$lib/utils/logger';
+  const log = createLogger('users');
 
   let users: User[] = [];
   let selectedUser: User | null = null;
@@ -79,7 +81,7 @@
       const data = await getAllUsers();
       users = data;
     } catch (error) {
-      console.error('Error loading users:', error);
+      log.error('Error loading users:', error);
     } finally {
       loading = false;
     }
@@ -118,11 +120,11 @@
         const txResult = await getUserTransactions(user.id, { limit: 50 });
         userTransactions = txResult.transactions;
       } catch (txErr) {
-        console.error('Error loading transactions:', txErr);
+        log.error('Error loading transactions:', txErr);
         userTransactions = [];
       }
     } catch (error) {
-      console.error('Error loading user details:', error);
+      log.error('Error loading user details:', error);
     } finally {
       loadingDetails = false;
       loadingTransactions = false;
@@ -153,7 +155,7 @@
       hasMoreImages = result.has_more;
       imageOffset += result.images.length;
     } catch (error) {
-      console.error('Error loading images:', error);
+      log.error('Error loading images:', error);
       if (!append) userImages = [];
     } finally {
       loadingImages = false;

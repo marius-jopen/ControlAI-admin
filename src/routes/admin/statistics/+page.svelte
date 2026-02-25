@@ -5,6 +5,8 @@
     type Statistics,
     type ImageStat,
   } from "$lib/api/client";
+  import { createLogger } from '$lib/utils/logger';
+  const log = createLogger('statistics');
 
   let statistics: Statistics | null = null;
   let loading = true;
@@ -121,7 +123,7 @@
         });
       }
     } catch (err) {
-      console.error("Error loading statistics:", err);
+      log.error("Error loading statistics:", err);
       error = err instanceof Error ? err.message : "Failed to load statistics";
     } finally {
       loading = false;

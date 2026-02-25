@@ -1,6 +1,8 @@
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { env } from '$lib/config/env';
+import { createLogger } from '$lib/utils/logger';
+const log = createLogger('auth');
 
 const API_URL = env.backend.url;
 
@@ -63,7 +65,7 @@ export async function initAuth() {
       });
     }
   } catch (error) {
-    console.error('Error initializing auth:', error);
+    log.error('Error initializing auth:', error);
     clearAuth();
   }
 }
@@ -82,7 +84,7 @@ async function checkAdminStatus(token: string): Promise<boolean> {
 
     return response.ok;
   } catch (error) {
-    console.error('Error checking admin status:', error);
+    log.error('Error checking admin status:', error);
     return false;
   }
 }
@@ -98,8 +100,8 @@ export async function signIn(email: string, password: string, appId: string = 'l
       appId // Use the app the user selected
     };
     
-    console.log('Attempting login to:', `${API_URL}/api/v1/auth/login`);
-    console.log('With appId:', appId);
+    log.debug('Attempting login to:', `${API_URL}/api/v1/auth/login`);
+    log.debug('With appId:', appId);
     
     const response = await fetch(`${API_URL}/api/v1/auth/login`, {
       method: 'POST',
@@ -111,13 +113,13 @@ export async function signIn(email: string, password: string, appId: string = 'l
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Login failed' }));
-      console.error('Login failed:', error);
-      console.error('Status:', response.status);
+      log.error('Login failed:', error);
+      log.error('Status:', response.status);
       throw new Error(error.error || error.message || 'Login failed');
     }
 
     const data = await response.json();
-    console.log('Login successful:', data);
+    log.info('Login successful:', data);
     
     // Check if user is admin
     const isAdmin = await checkAdminStatus(data.session.access_token);
@@ -166,7 +168,7 @@ export async function signOut() {
         }
       });
     } catch (error) {
-      console.error('Error signing out:', error);
+      log.error('Error signing out:', error);
     }
   }
 

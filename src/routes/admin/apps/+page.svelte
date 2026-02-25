@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getAllApps, updateApp, createApp, deleteApp, type AppConfig, getAllLoras, type Lora, uploadLoraImage } from '$lib/api/client';
+  import { createLogger } from '$lib/utils/logger';
+  const log = createLogger('apps');
 
   let apps: AppConfig[] = [];
   let selectedApp: AppConfig | null = null;
@@ -71,7 +73,7 @@
       lorasLoading = true;
       allLoras = await getAllLoras();
     } catch (err: any) {
-      console.error('Error loading LoRAs:', err);
+      log.error('Error loading LoRAs:', err);
       // Don't block the UI if LoRAs fail to load
     } finally {
       lorasLoading = false;
@@ -85,7 +87,7 @@
       apps = await getAllApps();
       apps.sort((a, b) => a.name.localeCompare(b.name));
     } catch (err: any) {
-      console.error('Error loading apps:', err);
+      log.error('Error loading apps:', err);
       error = err.message || 'Failed to load apps';
     } finally {
       loading = false;
@@ -177,7 +179,7 @@
       
       setTimeout(() => success = '', 3000);
     } catch (err: any) {
-      console.error('Error saving app:', err);
+      log.error('Error saving app:', err);
       error = err.message || 'Failed to save changes';
     } finally {
       saving = false;
@@ -215,7 +217,7 @@
       // Select the newly created app
       selectApp(created);
     } catch (err: any) {
-      console.error('Error creating app:', err);
+      log.error('Error creating app:', err);
       error = err.message || 'Failed to create app';
     } finally {
       saving = false;
@@ -238,7 +240,7 @@
       success = 'App deleted successfully!';
       setTimeout(() => success = '', 3000);
     } catch (err: any) {
-      console.error('Error deleting app:', err);
+      log.error('Error deleting app:', err);
       error = err.message || 'Failed to delete app';
       showDeleteConfirm = false;
     } finally {
@@ -401,11 +403,11 @@
       formData = { ...formData };
       hasUnsavedChanges = true;
 
-      console.log('✅ Tool image uploaded successfully');
+      log.info('Tool image uploaded successfully');
 
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to upload image';
-      console.error('Error uploading tool image:', e);
+      log.error('Error uploading tool image:', e);
     } finally {
       uploadingToolImages = { ...uploadingToolImages, [toolId]: false };
     }

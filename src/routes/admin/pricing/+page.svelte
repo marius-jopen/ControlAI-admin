@@ -7,6 +7,8 @@
     deletePricingConfig,
     type PricingConfig
   } from '$lib/api/client';
+  import { createLogger } from '$lib/utils/logger';
+  const log = createLogger('pricing');
 
   let configs: PricingConfig[] = [];
   let loading = true;
@@ -78,7 +80,7 @@
       editList = configs.map(normalizeConfig);
       dirtyIds = [];
     } catch (err: any) {
-      console.error('Error loading pricing configs:', err);
+      log.error('Error loading pricing configs:', err);
       error = err.message || 'Failed to load pricing configs';
     } finally {
       loading = false;
@@ -153,7 +155,7 @@
       success = 'Saved successfully!';
       setTimeout(() => success = '', 2000);
     } catch (err: any) {
-      console.error('Error saving pricing config:', err);
+      log.error('Error saving pricing config:', err);
       error = err.message || 'Failed to save';
     } finally {
       saving = { ...saving, [data.id]: false };
@@ -191,7 +193,7 @@
       success = 'API pricing entry added!';
       setTimeout(() => success = '', 3000);
     } catch (err: any) {
-      console.error('Error creating pricing config:', err);
+      log.error('Error creating pricing config:', err);
       error = err.message || 'Failed to create';
     } finally {
       saving = { ...saving, new: false };
@@ -212,7 +214,7 @@
       success = 'Entry deleted';
       setTimeout(() => success = '', 2000);
     } catch (err: any) {
-      console.error('Error deleting pricing config:', err);
+      log.error('Error deleting pricing config:', err);
       error = err.message || 'Failed to delete';
       deleteConfirmId = null;
     } finally {

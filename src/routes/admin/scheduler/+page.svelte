@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { getSchedulerConfig, saveSchedulerConfig } from "$lib/api/client";
+    import { createLogger } from '$lib/utils/logger';
+    const log = createLogger('scheduler');
 
     interface TimeWindow {
         start: string;
@@ -65,7 +67,7 @@
                 endpoints: [],
             };
         } catch (e: any) {
-            console.error("Failed to load scheduler config:", e);
+            log.error("Failed to load scheduler config:", e);
             error = e.message || "Failed to load configuration";
         } finally {
             loading = false;
@@ -85,7 +87,7 @@
             await loadConfig(); // Refresh to get latest status
             setTimeout(() => (successMessage = null), 3000);
         } catch (e: any) {
-            console.error("Failed to save scheduler config:", e);
+            log.error("Failed to save scheduler config:", e);
             error = e.message || "Failed to save configuration";
         } finally {
             saving = false;

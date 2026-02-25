@@ -15,6 +15,8 @@
     getAwsHealthCheck,
     type LoraFile
   } from '$lib/api/client';
+  import { createLogger } from '$lib/utils/logger';
+  const log = createLogger('loras');
 
   let loras: Lora[] = [];
   let filteredLoras: Lora[] = [];
@@ -74,7 +76,7 @@
       applyFilters();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load LoRAs';
-      console.error('Error loading LoRAs:', e);
+      log.error('Error loading LoRAs:', e);
     } finally {
       loading = false;
     }
@@ -116,10 +118,10 @@
     : remoteFiles;
 
   function startEditing(lora: Lora) {
-    console.log('🔵 startEditing called for:', lora.name, lora.id);
+    log.debug('startEditing called for:', lora.name, lora.id);
     // Create a new object reference to trigger Svelte reactivity
     editingLoras = { ...editingLoras, [lora.id]: { ...lora } };
-    console.log('🔵 editingLoras:', editingLoras);
+    log.debug('editingLoras:', editingLoras);
   }
 
   function updateEditingField(loraId: string, field: keyof Lora, value: any) {
@@ -159,10 +161,10 @@
       const { [loraId]: removed, ...rest } = editingLoras;
       editingLoras = rest;
       
-      console.log('✅ LoRA saved successfully');
+      log.info('LoRA saved successfully');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to save changes';
-      console.error('Error saving LoRA:', e);
+      log.error('Error saving LoRA:', e);
     } finally {
       savingLoras.delete(loraId);
       savingLoras = savingLoras; // Trigger reactivity
@@ -193,10 +195,10 @@
       showNewLoraForm = false;
       error = '';
       
-      console.log('✅ LoRA created successfully');
+      log.info('LoRA created successfully');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to create LoRA';
-      console.error('Error creating LoRA:', e);
+      log.error('Error creating LoRA:', e);
     }
   }
 
@@ -210,10 +212,10 @@
       loras = loras.filter(l => l.id !== loraId);
       applyFilters();
       
-      console.log('✅ LoRA deleted successfully');
+      log.info('LoRA deleted successfully');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to delete LoRA';
-      console.error('Error deleting LoRA:', e);
+      log.error('Error deleting LoRA:', e);
     }
   }
 
@@ -224,7 +226,7 @@
     
     // Debug logging for image field
     if (field === 'image' && editedValue) {
-      console.log(`🖼️ getDisplayValue for ${lora.name}: edited=${editedValue}, original=${originalValue}, returning=${result}`);
+      log.debug(`getDisplayValue for ${lora.name}: edited=${editedValue}, original=${originalValue}, returning=${result}`);
     }
     
     return result;
@@ -232,7 +234,6 @@
 
   function isEditing(loraId: string): boolean {
     const result = !!editingLoras[loraId];
-    // console.log('🟢 isEditing check for', loraId, ':', result);
     return result;
   }
 
@@ -262,7 +263,7 @@
       remoteFiles = await getRemoteLoraFiles();
     } catch (e) {
       runPodError = e instanceof Error ? e.message : 'Failed to load remote files';
-      console.error('Error loading remote files:', e);
+      log.error('Error loading remote files:', e);
     } finally {
       loadingRemote = false;
     }
@@ -274,7 +275,7 @@
       const result = await getTransferJobs();
       transferJobs = result.jobs || [];
     } catch (e) {
-      console.error('Error loading transfer jobs:', e);
+      log.error('Error loading transfer jobs:', e);
       runPodError = e instanceof Error ? e.message : 'Failed to load transfer jobs';
     } finally {
       loadingTransferJobs = false;
@@ -293,7 +294,7 @@
       loadingAwsHealth = true;
       awsHealth = await getAwsHealthCheck();
     } catch (e) {
-      console.error('Error loading AWS health:', e);
+      log.error('Error loading AWS health:', e);
       runPodError = e instanceof Error ? e.message : 'Failed to load AWS health';
     } finally {
       loadingAwsHealth = false;
@@ -377,7 +378,7 @@
       
       const checkInterval = setInterval(async () => {
         attempts++;
-        console.log(`🔄 Auto-refresh attempt ${attempts}/${maxAttempts} for ${fileName}`);
+        log.debug(`Auto-refresh attempt ${attempts}/${maxAttempts} for ${fileName}`);
         
         await loadRemoteFiles();
         
@@ -402,7 +403,7 @@
     } catch (e) {
       runPodError = e instanceof Error ? e.message : 'Failed to upload to RunPod';
       uploadLogs = [...uploadLogs, `❌ ${e instanceof Error ? e.message : 'Upload failed'}`];
-      console.error('Error uploading to RunPod:', e);
+      log.error('Error uploading to RunPod:', e);
     } finally {
       uploadingToRunPod = false;
     }
@@ -432,7 +433,7 @@
 
     } catch (e) {
       runPodError = e instanceof Error ? e.message : 'Failed to delete file';
-      console.error('Error deleting file:', e);
+      log.error('Error deleting file:', e);
     } finally {
       deletingFiles.delete(fileName);
       deletingFiles = deletingFiles;
@@ -465,26 +466,26 @@
       if (loraId) {
         // Editing existing LoRA
         if (editingLoras[loraId]) {
-          console.log('📸 Updating image for LoRA:', loraId);
-          console.log('📸 Old image:', editingLoras[loraId].image);
-          console.log('📸 New image:', imageUrlWithTimestamp);
+          log.debug('Updating image for LoRA:', loraId);
+          log.debug('Old image:', editingLoras[loraId].image);
+          log.debug('New image:', imageUrlWithTimestamp);
           
           // Create completely new object to ensure reactivity
           const updatedLora = { ...editingLoras[loraId], image: imageUrlWithTimestamp };
           editingLoras = { ...editingLoras, [loraId]: updatedLora };
           
-          console.log('📸 editingLoras updated:', editingLoras[loraId]);
+          log.debug('editingLoras updated:', editingLoras[loraId]);
         }
       } else {
         // New LoRA
         newLora.image = imageUrlWithTimestamp;
       }
       
-      console.log('✅ Image uploaded:', result.url);
+      log.info('Image uploaded:', result.url);
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : 'Failed to upload image';
       alert(`Upload failed: ${errorMsg}`);
-      console.error('Error uploading image:', e);
+      log.error('Error uploading image:', e);
     } finally {
       uploadingImages = { ...uploadingImages, [uploadKey]: false };
       dragOverStates = { ...dragOverStates, [uploadKey]: false };
@@ -1042,7 +1043,7 @@
                 <button
                   class="btn-icon"
                   on:click={() => {
-                    console.log('✏️ Edit button clicked!', lora.name);
+                    log.debug('Edit button clicked!', lora.name);
                     startEditing(lora);
                   }}
                   title="Edit"

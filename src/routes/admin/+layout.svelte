@@ -3,6 +3,8 @@
   import { authStore, signOut } from "$lib/auth/store";
   import { page } from "$app/stores";
   import { onMount } from "svelte";
+  import { createLogger } from '$lib/utils/logger';
+  const log = createLogger('admin');
 
   // Redirect if not admin
   $: if (
@@ -19,7 +21,7 @@
       await signOut();
       goto("/");
     } catch (error) {
-      console.error("Sign out error:", error);
+      log.error("Sign out error:", error);
     }
   }
 </script>
