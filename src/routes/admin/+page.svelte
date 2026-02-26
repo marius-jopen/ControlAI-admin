@@ -21,6 +21,8 @@
   let hasMoreImages = false;
   let imageOffset = 0;
   let searchQuery = '';
+  let filterApp = 'all';
+  let sortBy: 'name' | 'activity' | 'created' = 'name';
   let imageModal: ImageResource | null = null;
   let allUserImages: ImageResource[] = [];
 
@@ -48,16 +50,34 @@
   let creditAdjustSuccess: string = '';
   let creditAdjustError: string = '';
 
-  $: filteredUsers = users.filter(user => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const matchesId = user.id.toLowerCase().includes(query);
-    const matchesEmail = user.email?.toLowerCase().includes(query);
-    const matchesName = user.full_name?.toLowerCase().includes(query);
-    const emailDomain = user.email?.split('@')[1]?.toLowerCase();
-    const matchesDomain = emailDomain?.includes(query);
-    return matchesId || matchesEmail || matchesName || matchesDomain;
-  });
+  $: allAppIds = [...new Set(users.flatMap(u => u.apps.map(a => a.app_id)))].sort();
+
+  $: filteredUsers = users
+    .filter(user => {
+      if (filterApp !== 'all' && !user.apps.some(a => a.app_id === filterApp)) return false;
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      const matchesId = user.id.toLowerCase().includes(query);
+      const matchesEmail = user.email?.toLowerCase().includes(query);
+      const matchesName = user.full_name?.toLowerCase().includes(query);
+      const emailDomain = user.email?.split('@')[1]?.toLowerCase();
+      const matchesDomain = emailDomain?.includes(query);
+      return matchesId || matchesEmail || matchesName || matchesDomain;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name') {
+        return (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '');
+      }
+      if (sortBy === 'activity') {
+        const aDate = a.latest_activity || a.created_at || '';
+        const bDate = b.latest_activity || b.created_at || '';
+        return bDate.localeCompare(aDate);
+      }
+      if (sortBy === 'created') {
+        return (b.created_at || '').localeCompare(a.created_at || '');
+      }
+      return 0;
+    });
 
   onMount(async () => {
     await loadUsers();
@@ -367,6 +387,19 @@
         placeholder="Search by name, email, or domain..."
         bind:value={searchQuery}
       />
+      <div class="sidebar-filters">
+        <select class="input filter-select" bind:value={filterApp}>
+          <option value="all">All Apps</option>
+          {#each allAppIds as appId}
+            <option value={appId}>{appId.toUpperCase()}</option>
+          {/each}
+        </select>
+        <select class="input filter-select" bind:value={sortBy}>
+          <option value="name">Name A-Z</option>
+          <option value="activity">Recent Activity</option>
+          <option value="created">Newest First</option>
+        </select>
+      </div>
     </div>
 
     <div class="users-list">
@@ -929,6 +962,30 @@
   .sidebar-header {
     padding: 16px;
     border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sidebar-filters {
+    display: flex;
+    gap: 6px;
+  }
+
+  .filter-select {
+    flex: 1;
+    padding: 5px 6px;
+    font-size: 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 5px;
+    color: #374151;
+    background: white;
+    cursor: pointer;
+  }
+
+  .filter-select:focus {
+    outline: none;
+    border-color: #3b82f6;
   }
 
   .sidebar-header h2 {
