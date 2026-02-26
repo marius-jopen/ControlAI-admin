@@ -24,6 +24,9 @@
   let uploadingToolImages: Record<string, boolean> = {}; // Track which tool is uploading
   let dragOverToolStates: Record<string, boolean> = {}; // Track drag-over states
 
+  // Tabs
+  let activeTab: 'general' | 'credits' | 'loras' | 'tools' = 'general';
+
   // Form state for selected app
   let formData: any = null;
 
@@ -109,6 +112,7 @@
     error = '';
     success = '';
     hasUnsavedChanges = false;
+    activeTab = 'general';
     
     // Deep clone the config for editing
     const clonedConfig = JSON.parse(JSON.stringify(app.config));
@@ -692,618 +696,638 @@
           </div>
         </div>
 
-        <!-- Basic Info -->
-        <section class="details-section">
-          <h3>📝 Basic Information</h3>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>App Name</label>
-              <input 
-                type="text" 
-                class="input" 
-                bind:value={formData.name}
-                on:input={markChanged}
-                placeholder="App Name"
-              />
-            </div>
-          </div>
-        </section>
+        <!-- Tab navigation -->
+        <div class="tab-nav">
+          <button class="tab-btn" class:active={activeTab === 'general'} on:click={() => activeTab = 'general'}>
+            General
+          </button>
+          <button class="tab-btn" class:active={activeTab === 'credits'} on:click={() => activeTab = 'credits'}>
+            Credits
+          </button>
+          <button class="tab-btn" class:active={activeTab === 'loras'} on:click={() => activeTab = 'loras'}>
+            LoRAs
+          </button>
+          <button class="tab-btn" class:active={activeTab === 'tools'} on:click={() => activeTab = 'tools'}>
+            Tools ({Object.values(formData.config.features.studio.tools).filter((t) => (t as any).enabled).length})
+          </button>
+        </div>
 
-        <!-- Credits & Billing -->
-        <section class="details-section">
-          <h3>Credits & Billing</h3>
-          <p class="section-description">Configure how credits are distributed and charged for this app</p>
-          
-          <!-- Credit Mode Selector -->
-          <div class="credit-mode-selector">
-            <label class="credit-mode-label">Credit Mode</label>
-            <div class="credit-mode-options">
-              <label 
-                class="credit-mode-option"
-                class:selected={creditMode === 'individual'}
-              >
-                <input 
-                  type="radio" 
-                  name="credit_mode"
-                  value="individual"
-                  bind:group={creditMode}
-                  on:change={markChanged}
-                />
-                <div class="credit-mode-content">
-                  <span class="credit-mode-title">Individual</span>
-                  <span class="credit-mode-desc">Admin allocates credits to each user individually</span>
-                </div>
-              </label>
-              
-              <label 
-                class="credit-mode-option"
-                class:selected={creditMode === 'pool'}
-              >
-                <input 
-                  type="radio" 
-                  name="credit_mode"
-                  value="pool"
-                  bind:group={creditMode}
-                  on:change={markChanged}
-                />
-                <div class="credit-mode-content">
-                  <span class="credit-mode-title">Shared Pool</span>
-                  <span class="credit-mode-desc">All users share one pool of credits (no per-user limit)</span>
-                </div>
-              </label>
-              
-              <label 
-                class="credit-mode-option"
-                class:selected={creditMode === 'pool_capped'}
-              >
-                <input 
-                  type="radio" 
-                  name="credit_mode"
-                  value="pool_capped"
-                  bind:group={creditMode}
-                  on:change={markChanged}
-                />
-                <div class="credit-mode-content">
-                  <span class="credit-mode-title">Pool with Cap</span>
-                  <span class="credit-mode-desc">Shared pool, but each user has a max usage limit per period</span>
-                </div>
-              </label>
-              
-              <!-- Self Service removed — not needed until user-facing payment flow exists -->
-            </div>
-
-            <!-- How it works explanation -->
-            <div class="credit-explainer">
-              {#if creditMode === 'individual'}
-                <h4>How Individual mode works</h4>
-                <ul>
-                  <li><strong>Each user has their own credit balance</strong> — managed on the Users page. New users start with 1,000 credits by default.</li>
-                  <li>When a user generates an image, credits are deducted from their personal balance. <strong>Credits</strong> (allocated by admin) are used first, then <strong>Bonus credits</strong> (purchased by user).</li>
-                  <li>When their balance reaches 0, they can no longer generate until you add more on the Users page.</li>
-                  <li>Users can see their own balance in the header. They cannot see other users' balances.</li>
-                  <li><strong>Reset All Usage</strong> = sets every user's credits and bonus credits to 0. Use with caution.</li>
-                </ul>
-              {:else if creditMode === 'pool'}
-                <h4>How Shared Pool mode works</h4>
-                <ul>
-                  <li><strong>Pool Balance</strong> = the total credits available for the whole app. Every generation by any user deducts from this single pool.</li>
-                  <li>There is <strong>no per-user limit</strong> — any user can use as many credits as the pool allows.</li>
-                  <li>When the pool hits 0, <strong>all users</strong> are blocked from generating.</li>
-                  <li><strong>Set New Balance</strong> = type the exact pool balance you want. <strong>Add / Remove</strong> = adjust by a specific amount.</li>
-                  <li><strong>Reset All Usage</strong> = clears all usage history. The pool balance stays the same.</li>
-                </ul>
-              {:else if creditMode === 'pool_capped'}
-                <h4>How Pool with Cap mode works</h4>
-                <ul>
-                  <li><strong>Pool Balance</strong> = the total credits available for the whole app. When a user generates, credits are deducted from this shared pool.</li>
-                  <li><strong>Per-User Cap</strong> = the maximum credits one user can spend per period (daily/weekly/monthly). This limits individual users but doesn't change the pool size.</li>
-                  <li><strong>Cap Period</strong> = when the per-user usage counter resets (e.g. start of each month). The pool balance is NOT affected by the reset — only the per-user counters go back to 0.</li>
-                  <li>A user is <strong>blocked</strong> when they hit their cap OR when the pool runs out — whichever comes first.</li>
-                  <li><strong>Set New Balance</strong> = type the exact pool balance you want (e.g. when a client pays you, set it to the new total). <strong>Add / Remove</strong> = adjust the current balance by a specific amount.</li>
-                  <li><strong>Reset All Usage</strong> = resets every user's period usage counter to 0 (pool balance stays the same). Use this if you want to manually give everyone a fresh start mid-period.</li>
-                  <li>On the Users page, you can adjust an individual user's usage within the current period (e.g. refund credits for a failed generation).</li>
-                </ul>
-              {/if}
-            </div>
-          </div>
-
-          <!-- Credit Pool Display (for pool and pool_capped modes) -->
-          {#if creditMode === 'pool' || creditMode === 'pool_capped'}
-            <!-- Pool alerts -->
-            {#if creditPool <= 0}
-              <div class="pool-alert pool-alert-critical">
-                <strong>Pool exhausted</strong> — Users can no longer generate. Add credits immediately.
-              </div>
-            {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.05}
-              <div class="pool-alert pool-alert-critical">
-                <strong>Critical: Pool below 5%</strong> — Only {creditPool.toLocaleString()} credits remaining (€{(creditPool * 0.01).toFixed(2)}).
-              </div>
-            {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.2}
-              <div class="pool-alert pool-alert-low">
-                <strong>Low pool balance</strong> — {creditPool.toLocaleString()} credits remaining ({Math.round(creditPool / creditPoolAllocated * 100)}% of allocated).
-              </div>
-            {:else if creditPool < 100}
-              <div class="pool-alert pool-alert-low">
-                <strong>Low pool balance</strong> — Only {creditPool.toLocaleString()} credits remaining.
-              </div>
-            {/if}
-
-            <div class="credit-pool-section">
-              <div class="credit-pool-stats">
-                <div class="credit-stat">
-                  <span class="credit-stat-label">Pool Balance</span>
-                  <span class="credit-stat-value" class:negative={creditPool < 0}>{creditPool.toLocaleString()}</span>
-                  <span class="credit-stat-sub">Credits available</span>
-                </div>
-                <div class="credit-stat">
-                  <span class="credit-stat-label">Value</span>
-                  <span class="credit-stat-value">€{(creditPool * 0.01).toFixed(2)}</span>
-                  <span class="credit-stat-sub">1 credit = €0.01</span>
-                </div>
-              </div>
-
-              <div class="credit-pool-topup">
-                <div class="pool-adjust-grid">
-                  <div class="pool-adjust-field">
-                    <label>Set New Balance</label>
-                    <input 
-                      type="number" 
-                      class="input input-sm" 
-                      bind:value={targetBalance}
-                      on:input={() => { creditAddAmount = targetBalance - creditPool; markChanged(); }}
-                      placeholder="New balance"
-                      min="0"
-                      step="100"
-                    />
-                    <small>Type the exact balance you want</small>
-                  </div>
-                  <div class="pool-adjust-field">
-                    <label>Add / Remove</label>
-                    <input 
-                      type="number" 
-                      class="input input-sm" 
-                      bind:value={creditAddAmount}
-                      on:input={markChanged}
-                      placeholder="+/- credits"
-                      step="100"
-                    />
-                    <small>Positive to add, negative to remove</small>
-                  </div>
-                </div>
-                {#if creditAddAmount !== 0}
-                  <div class="pool-adjust-preview">
-                    {creditPool.toLocaleString()} → <strong>{(creditPool + creditAddAmount).toLocaleString()}</strong>
-                    ({creditAddAmount > 0 ? '+' : ''}{creditAddAmount.toLocaleString()} credits, €{((creditPool + creditAddAmount) * 0.01).toFixed(2)})
-                  </div>
-                {/if}
-                <small>1 credit = €0.01. Click "Save Changes" to apply.</small>
-              </div>
-            </div>
-          {/if}
-
-          <!-- Pool User Cap (only for pool_capped mode) -->
-          {#if creditMode === 'pool_capped'}
-            <div class="credit-cap-section">
+        <div class="tab-content">
+          <!-- GENERAL TAB -->
+          {#if activeTab === 'general'}
+            <!-- Basic Info -->
+            <section class="details-section">
+              <h3>📝 Basic Information</h3>
               <div class="form-grid">
                 <div class="form-group">
-                  <label>Per-User Cap (credits)</label>
+                  <label>App Name</label>
                   <input 
-                    type="number" 
+                    type="text" 
                     class="input" 
-                    bind:value={poolUserCap}
+                    bind:value={formData.name}
                     on:input={markChanged}
-                    placeholder="e.g. 500"
-                    min="0"
+                    placeholder="App Name"
                   />
-                  <small>Max credits each user can spend per period</small>
-                </div>
-                <div class="form-group">
-                  <label>Cap Period</label>
-                  <select class="input" bind:value={poolUserCapPeriod} on:change={markChanged}>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                  <small>When the usage counter resets</small>
                 </div>
               </div>
-            </div>
-          {/if}
+            </section>
 
-          <!-- Reset Usage -->
-          <div class="reset-section">
-            {#if !showResetConfirm}
-              <button class="btn btn-danger-outline" on:click={() => showResetConfirm = true}>
-                Reset All Usage
-              </button>
-              <small>Reset all user credits and usage counters for this app.</small>
-            {:else}
-              <div class="reset-confirm">
-                <p><strong>Are you sure?</strong> This will:</p>
-                <ul>
-                  {#if creditMode === 'individual'}
-                    <li>Set every user's credits and bonus credits to <strong>0</strong></li>
-                  {:else}
-                    <li>Reset every user's period usage counter to <strong>0</strong></li>
-                    <li>Delete all generation charge transactions for this app</li>
-                  {/if}
-                </ul>
-                <p>This action <strong>cannot be undone</strong>.</p>
-                <div class="reset-actions">
-                  <button
-                    class="btn btn-danger"
-                    disabled={resetting}
-                    on:click={async () => {
-                      if (!selectedApp) return;
-                      resetting = true;
-                      try {
-                        await resetAppUsage(selectedApp.id);
-                        success = 'Usage reset successfully for all users.';
-                        showResetConfirm = false;
-                      } catch (err) {
-                        error = err instanceof Error ? err.message : 'Failed to reset usage';
-                      } finally {
-                        resetting = false;
-                      }
-                    }}
-                  >
-                    {resetting ? 'Resetting...' : 'Yes, Reset Everything'}
-                  </button>
-                  <button class="btn btn-secondary" on:click={() => showResetConfirm = false}>Cancel</button>
-                </div>
-              </div>
-            {/if}
-          </div>
-
-          <!-- Individual mode info -->
-          {#if creditMode === 'individual'}
-            <div class="credit-info-box">
-              <p>In <strong>Individual</strong> mode, each user has their own credit balance. You can manage user credits from the <a href="/admin" target="_blank">Users page</a>.</p>
-              <div class="credit-pool-stats" style="margin-top: 12px;">
-                <div class="credit-stat">
-                  <span class="credit-stat-label">App Pool (unused in this mode)</span>
-                  <span class="credit-stat-value">{creditPool.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-          {/if}
-
-          <!-- Self-service mode removed -->
-        </section>
-
-        <!-- Domains -->
-        <section class="details-section">
-          <h3>🌐 Domains</h3>
-          <div class="domains-section">
-            {#each formData.config.domains as domain, i}
-              <div class="domain-input-row">
-                <input 
-                  type="text" 
-                  class="input" 
-                  bind:value={formData.config.domains[i]}
-                  on:input={markChanged}
-                  placeholder="example.com"
-                />
-                <button 
-                  class="btn btn-icon btn-danger-sm" 
-                  on:click={() => removeDomain(i)}
-                  title="Remove domain"
-                >
-                  🗑️
+            <!-- Domains -->
+            <section class="details-section">
+              <h3>🌐 Domains</h3>
+              <div class="domains-section">
+                {#each formData.config.domains as domain, i}
+                  <div class="domain-input-row">
+                    <input 
+                      type="text" 
+                      class="input" 
+                      bind:value={formData.config.domains[i]}
+                      on:input={markChanged}
+                      placeholder="example.com"
+                    />
+                    <button 
+                      class="btn btn-icon btn-danger-sm" 
+                      on:click={() => removeDomain(i)}
+                      title="Remove domain"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                {/each}
+                <button class="btn btn-secondary btn-sm" on:click={addDomain}>
+                  + Add Domain
                 </button>
               </div>
-            {/each}
-            <button class="btn btn-secondary btn-sm" on:click={addDomain}>
-              + Add Domain
-            </button>
-          </div>
-        </section>
+            </section>
 
-        <!-- Welcome Message -->
-        <section class="details-section">
-          <h3> Welcome Message</h3>
-          <div class="form-grid">
-            <div class="form-group full-width">
-              <label>Title</label>
-              <input 
-                type="text" 
-                class="input" 
-                bind:value={formData.config.welcome.title}
-                on:input={markChanged}
-                placeholder="Welcome Title"
-              />
-            </div>
-            <div class="form-group full-width">
-              <label>Description</label>
-              <textarea 
-                class="textarea" 
-                bind:value={formData.config.welcome.description}
-                on:input={markChanged}
-                placeholder="Welcome description"
-                rows="3"
-              ></textarea>
-            </div>
-            <div class="form-group full-width">
-              <label>Call to Action</label>
-              <input 
-                type="text" 
-                class="input" 
-                bind:value={formData.config.welcome.callToAction}
-                on:input={markChanged}
-                placeholder="Call to action text"
-              />
-            </div>
-          </div>
-        </section>
-
-        <!-- Registration Settings -->
-        <section class="details-section">
-          <h3>🔐 Registration Settings</h3>
-          <div class="form-grid">
-            <div class="form-group full-width">
-              <label>Register Password</label>
-              <input 
-                type="text" 
-                class="input" 
-                bind:value={formData.config.registerPassword}
-                on:input={markChanged}
-                placeholder="Enter registration password (optional)"
-              />
-              <small>If set, users will need this password to register for this app</small>
-            </div>
-          </div>
-        </section>
-
-        <!-- Global LoRAs -->
-        <section class="details-section">
-          <h3>🎨 Global LoRAs</h3>
-          <p class="section-description">Select LoRAs to enable across all compatible tools (can be overridden per tool)</p>
-          
-          <div class="global-loras-container">
-            <!-- FLUX LoRAs -->
-            {#if fluxLoras.length > 0}
-              <div class="global-lora-type-section">
-                <h4>FLUX LoRAs</h4>
-                <div class="global-loras-grid">
-                  {#each fluxLoras as lora}
-                    {@const isSelected = formData.config.features.studio.globalLoras?.flux?.includes(lora.id) || false}
-                    <label class="global-lora-checkbox" class:selected={isSelected}>
-                      <input 
-                        type="checkbox" 
-                        checked={isSelected}
-                        on:change={() => toggleGlobalLora('flux', lora.id)}
-                      />
-                      <div class="lora-info">
-                        {#if lora.image}
-                          <img src={lora.image} alt={lora.name} class="lora-thumb" />
-                        {/if}
-                        <div class="lora-text">
-                          <span class="lora-name">{lora.name}</span>
-                          {#if lora.trigger}
-                            <span class="lora-trigger">{lora.trigger}</span>
-                          {/if}
-                        </div>
-                      </div>
-                    </label>
-                  {/each}
+            <!-- Welcome Message -->
+            <section class="details-section">
+              <h3> Welcome Message</h3>
+              <div class="form-grid">
+                <div class="form-group full-width">
+                  <label>Title</label>
+                  <input 
+                    type="text" 
+                    class="input" 
+                    bind:value={formData.config.welcome.title}
+                    on:input={markChanged}
+                    placeholder="Welcome Title"
+                  />
+                </div>
+                <div class="form-group full-width">
+                  <label>Description</label>
+                  <textarea 
+                    class="textarea" 
+                    bind:value={formData.config.welcome.description}
+                    on:input={markChanged}
+                    placeholder="Welcome description"
+                    rows="3"
+                  ></textarea>
+                </div>
+                <div class="form-group full-width">
+                  <label>Call to Action</label>
+                  <input 
+                    type="text" 
+                    class="input" 
+                    bind:value={formData.config.welcome.callToAction}
+                    on:input={markChanged}
+                    placeholder="Call to action text"
+                  />
                 </div>
               </div>
-            {/if}
+            </section>
 
-            <!-- SDXL LoRAs -->
-            {#if sdxlLoras.length > 0}
-              <div class="global-lora-type-section">
-                <h4>SDXL LoRAs</h4>
-                <div class="global-loras-grid">
-                  {#each sdxlLoras as lora}
-                    {@const isSelected = formData.config.features.studio.globalLoras?.sdxl?.includes(lora.id) || false}
-                    <label class="global-lora-checkbox" class:selected={isSelected}>
-                      <input 
-                        type="checkbox" 
-                        checked={isSelected}
-                        on:change={() => toggleGlobalLora('sdxl', lora.id)}
-                      />
-                      <div class="lora-info">
-                        {#if lora.image}
-                          <img src={lora.image} alt={lora.name} class="lora-thumb" />
-                        {/if}
-                        <div class="lora-text">
-                          <span class="lora-name">{lora.name}</span>
-                          {#if lora.trigger}
-                            <span class="lora-trigger">{lora.trigger}</span>
-                          {/if}
-                        </div>
-                      </div>
-                    </label>
-                  {/each}
+            <!-- Registration Settings -->
+            <section class="details-section">
+              <h3>🔐 Registration Settings</h3>
+              <div class="form-grid">
+                <div class="form-group full-width">
+                  <label>Register Password</label>
+                  <input 
+                    type="text" 
+                    class="input" 
+                    bind:value={formData.config.registerPassword}
+                    on:input={markChanged}
+                    placeholder="Enter registration password (optional)"
+                  />
+                  <small>If set, users will need this password to register for this app</small>
                 </div>
               </div>
-            {/if}
+            </section>
 
-            {#if fluxLoras.length === 0 && sdxlLoras.length === 0}
-              <p class="loras-empty">
-                No LoRAs available. <a href="/admin/loras" target="_blank">Add LoRAs</a>
-              </p>
-            {/if}
-          </div>
-        </section>
-
-        <!-- Studio Tools -->
-        <section class="details-section">
-          <h3>🛠️ Studio Tools</h3>
-          <p class="section-description">Configure which tools are available in this app</p>
-          
-          <div class="tools-list">
-            {#each AVAILABLE_TOOLS as toolDef}
-              {@const tool = formData.config.features.studio.tools[toolDef.id]}
-              {@const isEnabled = tool?.enabled || false}
+          <!-- CREDITS TAB -->
+          {:else if activeTab === 'credits'}
+            <section class="details-section">
+              <h3>Credits & Billing</h3>
+              <p class="section-description">Configure how credits are distributed and charged for this app</p>
               
-              <div class="tool-row" class:enabled={isEnabled}>
-                <div class="tool-header">
-                  <div class="tool-toggle-section">
+              <!-- Credit Mode Selector -->
+              <div class="credit-mode-selector">
+                <label class="credit-mode-label">Credit Mode</label>
+                <div class="credit-mode-options">
+                  <label 
+                    class="credit-mode-option"
+                    class:selected={creditMode === 'individual'}
+                  >
                     <input 
-                      type="checkbox" 
-                      checked={isEnabled}
-                      on:change={() => toggleTool(toolDef.id)}
-                      class="tool-checkbox"
+                      type="radio" 
+                      name="credit_mode"
+                      value="individual"
+                      bind:group={creditMode}
+                      on:change={markChanged}
                     />
-                    {#if tool?.thumbnail}
-                      <div 
-                        class="tool-thumbnail editable"
-                        class:drag-over={dragOverToolStates[toolDef.id]}
-                        class:uploading={uploadingToolImages[toolDef.id]}
-                        on:dragover={(e) => handleToolDragOver(e, toolDef.id)}
-                        on:dragleave={(e) => handleToolDragLeave(e, toolDef.id)}
-                        on:drop={(e) => handleToolDrop(e, toolDef.id)}
-                      >
-                        {#if uploadingToolImages[toolDef.id]}
-                          <div class="tool-upload-overlay">⏳ Uploading...</div>
-                        {:else}
-                          <div class="tool-image-edit-overlay">
-                            <label class="btn-replace-tool-image">
-                              📸 Replace
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                style="display: none;"
-                                on:change={(e) => handleToolFileSelect(e, toolDef.id)}
-                              />
-                            </label>
-                          </div>
-                        {/if}
-                        <img src={tool.thumbnail} alt={toolDef.name} />
+                    <div class="credit-mode-content">
+                      <span class="credit-mode-title">Individual</span>
+                      <span class="credit-mode-desc">Admin allocates credits to each user individually</span>
+                    </div>
+                  </label>
+                  
+                  <label 
+                    class="credit-mode-option"
+                    class:selected={creditMode === 'pool'}
+                  >
+                    <input 
+                      type="radio" 
+                      name="credit_mode"
+                      value="pool"
+                      bind:group={creditMode}
+                      on:change={markChanged}
+                    />
+                    <div class="credit-mode-content">
+                      <span class="credit-mode-title">Shared Pool</span>
+                      <span class="credit-mode-desc">All users share one pool of credits (no per-user limit)</span>
+                    </div>
+                  </label>
+                  
+                  <label 
+                    class="credit-mode-option"
+                    class:selected={creditMode === 'pool_capped'}
+                  >
+                    <input 
+                      type="radio" 
+                      name="credit_mode"
+                      value="pool_capped"
+                      bind:group={creditMode}
+                      on:change={markChanged}
+                    />
+                    <div class="credit-mode-content">
+                      <span class="credit-mode-title">Pool with Cap</span>
+                      <span class="credit-mode-desc">Shared pool, but each user has a max usage limit per period</span>
+                    </div>
+                  </label>
+                </div>
+
+                <!-- How it works explanation -->
+                <div class="credit-explainer">
+                  {#if creditMode === 'individual'}
+                    <h4>How Individual mode works</h4>
+                    <ul>
+                      <li><strong>Each user has their own credit balance</strong> — managed on the Users page. New users start with 1,000 credits by default.</li>
+                      <li>When a user generates an image, credits are deducted from their personal balance. <strong>Credits</strong> (allocated by admin) are used first, then <strong>Bonus credits</strong> (purchased by user).</li>
+                      <li>When their balance reaches 0, they can no longer generate until you add more on the Users page.</li>
+                      <li>Users can see their own balance in the header. They cannot see other users' balances.</li>
+                      <li><strong>Reset All Usage</strong> = sets every user's credits and bonus credits to 0. Use with caution.</li>
+                    </ul>
+                  {:else if creditMode === 'pool'}
+                    <h4>How Shared Pool mode works</h4>
+                    <ul>
+                      <li><strong>Pool Balance</strong> = the total credits available for the whole app. Every generation by any user deducts from this single pool.</li>
+                      <li>There is <strong>no per-user limit</strong> — any user can use as many credits as the pool allows.</li>
+                      <li>When the pool hits 0, <strong>all users</strong> are blocked from generating.</li>
+                      <li><strong>Set New Balance</strong> = type the exact pool balance you want. <strong>Add / Remove</strong> = adjust by a specific amount.</li>
+                      <li><strong>Reset All Usage</strong> = clears all usage history. The pool balance stays the same.</li>
+                    </ul>
+                  {:else if creditMode === 'pool_capped'}
+                    <h4>How Pool with Cap mode works</h4>
+                    <ul>
+                      <li><strong>Pool Balance</strong> = the total credits available for the whole app. When a user generates, credits are deducted from this shared pool.</li>
+                      <li><strong>Per-User Cap</strong> = the maximum credits one user can spend per period (daily/weekly/monthly). This limits individual users but doesn't change the pool size.</li>
+                      <li><strong>Cap Period</strong> = when the per-user usage counter resets (e.g. start of each month). The pool balance is NOT affected by the reset — only the per-user counters go back to 0.</li>
+                      <li>A user is <strong>blocked</strong> when they hit their cap OR when the pool runs out — whichever comes first.</li>
+                      <li><strong>Set New Balance</strong> = type the exact pool balance you want (e.g. when a client pays you, set it to the new total). <strong>Add / Remove</strong> = adjust the current balance by a specific amount.</li>
+                      <li><strong>Reset All Usage</strong> = resets every user's period usage counter to 0 (pool balance stays the same). Use this if you want to manually give everyone a fresh start mid-period.</li>
+                      <li>On the Users page, you can adjust an individual user's usage within the current period (e.g. refund credits for a failed generation).</li>
+                    </ul>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Credit Pool Display (for pool and pool_capped modes) -->
+              {#if creditMode === 'pool' || creditMode === 'pool_capped'}
+                <!-- Pool alerts -->
+                {#if creditPool <= 0}
+                  <div class="pool-alert pool-alert-critical">
+                    <strong>Pool exhausted</strong> — Users can no longer generate. Add credits immediately.
+                  </div>
+                {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.05}
+                  <div class="pool-alert pool-alert-critical">
+                    <strong>Critical: Pool below 5%</strong> — Only {creditPool.toLocaleString()} credits remaining (€{(creditPool * 0.01).toFixed(2)}).
+                  </div>
+                {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.2}
+                  <div class="pool-alert pool-alert-low">
+                    <strong>Low pool balance</strong> — {creditPool.toLocaleString()} credits remaining ({Math.round(creditPool / creditPoolAllocated * 100)}% of allocated).
+                  </div>
+                {:else if creditPool < 100}
+                  <div class="pool-alert pool-alert-low">
+                    <strong>Low pool balance</strong> — Only {creditPool.toLocaleString()} credits remaining.
+                  </div>
+                {/if}
+
+                <div class="credit-pool-section">
+                  <div class="credit-pool-stats">
+                    <div class="credit-stat">
+                      <span class="credit-stat-label">Pool Balance</span>
+                      <span class="credit-stat-value" class:negative={creditPool < 0}>{creditPool.toLocaleString()}</span>
+                      <span class="credit-stat-sub">Credits available</span>
+                    </div>
+                    <div class="credit-stat">
+                      <span class="credit-stat-label">Value</span>
+                      <span class="credit-stat-value">€{(creditPool * 0.01).toFixed(2)}</span>
+                      <span class="credit-stat-sub">1 credit = €0.01</span>
+                    </div>
+                  </div>
+
+                  <div class="credit-pool-topup">
+                    <div class="pool-adjust-grid">
+                      <div class="pool-adjust-field">
+                        <label>Set New Balance</label>
+                        <input 
+                          type="number" 
+                          class="input input-sm" 
+                          bind:value={targetBalance}
+                          on:input={() => { creditAddAmount = targetBalance - creditPool; markChanged(); }}
+                          placeholder="New balance"
+                          min="0"
+                          step="100"
+                        />
+                        <small>Type the exact balance you want</small>
                       </div>
-                    {:else}
-                      <div 
-                        class="tool-thumbnail tool-thumbnail-placeholder editable"
-                        class:drag-over={dragOverToolStates[toolDef.id]}
-                        class:uploading={uploadingToolImages[toolDef.id]}
-                        on:dragover={(e) => handleToolDragOver(e, toolDef.id)}
-                        on:dragleave={(e) => handleToolDragLeave(e, toolDef.id)}
-                        on:drop={(e) => handleToolDrop(e, toolDef.id)}
-                      >
-                        {#if uploadingToolImages[toolDef.id]}
-                          <div class="tool-upload-overlay">⏳ Uploading...</div>
-                        {:else}
-                          <div class="tool-image-edit-overlay">
-                            <label class="btn-replace-tool-image">
-                              📸 Add Image
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                style="display: none;"
-                                on:change={(e) => handleToolFileSelect(e, toolDef.id)}
-                              />
-                            </label>
-                          </div>
-                          <span>🔧</span>
-                        {/if}
+                      <div class="pool-adjust-field">
+                        <label>Add / Remove</label>
+                        <input 
+                          type="number" 
+                          class="input input-sm" 
+                          bind:value={creditAddAmount}
+                          on:input={markChanged}
+                          placeholder="+/- credits"
+                          step="100"
+                        />
+                        <small>Positive to add, negative to remove</small>
+                      </div>
+                    </div>
+                    {#if creditAddAmount !== 0}
+                      <div class="pool-adjust-preview">
+                        {creditPool.toLocaleString()} → <strong>{(creditPool + creditAddAmount).toLocaleString()}</strong>
+                        ({creditAddAmount > 0 ? '+' : ''}{creditAddAmount.toLocaleString()} credits, €{((creditPool + creditAddAmount) * 0.01).toFixed(2)})
                       </div>
                     {/if}
-                    <div class="tool-info">
-                      <span class="tool-name">{toolDef.name}</span>
-                      <span class="tool-id">{toolDef.id}</span>
+                    <small>1 credit = €0.01. Click "Save Changes" to apply.</small>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Pool User Cap (only for pool_capped mode) -->
+              {#if creditMode === 'pool_capped'}
+                <div class="credit-cap-section">
+                  <div class="form-grid">
+                    <div class="form-group">
+                      <label>Per-User Cap (credits)</label>
+                      <input 
+                        type="number" 
+                        class="input" 
+                        bind:value={poolUserCap}
+                        on:input={markChanged}
+                        placeholder="e.g. 500"
+                        min="0"
+                      />
+                      <small>Max credits each user can spend per period</small>
+                    </div>
+                    <div class="form-group">
+                      <label>Cap Period</label>
+                      <select class="input" bind:value={poolUserCapPeriod} on:change={markChanged}>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                      <small>When the usage counter resets</small>
                     </div>
                   </div>
                 </div>
-                
-                {#if isEnabled && tool}
-                  <div class="tool-settings">
-                    <div class="tool-settings-grid">
-                      <div class="tool-setting">
-                        <label>Display Title</label>
-                        <input 
-                          type="text" 
-                          class="input input-sm" 
-                          bind:value={tool.title}
-                          on:input={markChanged}
-                          placeholder="Tool display name"
-                        />
-                      </div>
-                      <div class="tool-setting">
-                        <label>Thumbnail URL</label>
-                        <div class="thumbnail-url-row">
+              {/if}
+
+              <!-- Reset Usage -->
+              <div class="reset-section">
+                {#if !showResetConfirm}
+                  <button class="btn btn-danger-outline" on:click={() => showResetConfirm = true}>
+                    Reset All Usage
+                  </button>
+                  <small>Reset all user credits and usage counters for this app.</small>
+                {:else}
+                  <div class="reset-confirm">
+                    <p><strong>Are you sure?</strong> This will:</p>
+                    <ul>
+                      {#if creditMode === 'individual'}
+                        <li>Set every user's credits and bonus credits to <strong>0</strong></li>
+                      {:else}
+                        <li>Reset every user's period usage counter to <strong>0</strong></li>
+                        <li>Delete all generation charge transactions for this app</li>
+                      {/if}
+                    </ul>
+                    <p>This action <strong>cannot be undone</strong>.</p>
+                    <div class="reset-actions">
+                      <button
+                        class="btn btn-danger"
+                        disabled={resetting}
+                        on:click={async () => {
+                          if (!selectedApp) return;
+                          resetting = true;
+                          try {
+                            await resetAppUsage(selectedApp.id);
+                            success = 'Usage reset successfully for all users.';
+                            showResetConfirm = false;
+                          } catch (err) {
+                            error = err instanceof Error ? err.message : 'Failed to reset usage';
+                          } finally {
+                            resetting = false;
+                          }
+                        }}
+                      >
+                        {resetting ? 'Resetting...' : 'Yes, Reset Everything'}
+                      </button>
+                      <button class="btn btn-secondary" on:click={() => showResetConfirm = false}>Cancel</button>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Individual mode info -->
+              {#if creditMode === 'individual'}
+                <div class="credit-info-box">
+                  <p>In <strong>Individual</strong> mode, each user has their own credit balance. You can manage user credits from the <a href="/admin" target="_blank">Users page</a>.</p>
+                  <div class="credit-pool-stats" style="margin-top: 12px;">
+                    <div class="credit-stat">
+                      <span class="credit-stat-label">App Pool (unused in this mode)</span>
+                      <span class="credit-stat-value">{creditPool.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            </section>
+
+          <!-- LORAS TAB -->
+          {:else if activeTab === 'loras'}
+            <section class="details-section">
+              <h3>🎨 Global LoRAs</h3>
+              <p class="section-description">Select LoRAs to enable across all compatible tools (can be overridden per tool)</p>
+              
+              <div class="global-loras-container">
+                <!-- FLUX LoRAs -->
+                {#if fluxLoras.length > 0}
+                  <div class="global-lora-type-section">
+                    <h4>FLUX LoRAs</h4>
+                    <div class="global-loras-grid">
+                      {#each fluxLoras as lora}
+                        {@const isSelected = formData.config.features.studio.globalLoras?.flux?.includes(lora.id) || false}
+                        <label class="global-lora-checkbox" class:selected={isSelected}>
                           <input 
-                            type="text" 
-                            class="input input-sm" 
-                            bind:value={tool.thumbnail}
-                            on:input={markChanged}
-                            placeholder="https://..."
+                            type="checkbox" 
+                            checked={isSelected}
+                            on:change={() => toggleGlobalLora('flux', lora.id)}
                           />
-                          <button 
-                            class="btn btn-secondary btn-sm btn-copy-limn"
-                            on:click={() => copyThumbnailFromLimn(toolDef.id)}
-                            title="Copy thumbnail URL from Limn app"
+                          <div class="lora-info">
+                            {#if lora.image}
+                              <img src={lora.image} alt={lora.name} class="lora-thumb" />
+                            {/if}
+                            <div class="lora-text">
+                              <span class="lora-name">{lora.name}</span>
+                              {#if lora.trigger}
+                                <span class="lora-trigger">{lora.trigger}</span>
+                              {/if}
+                            </div>
+                          </div>
+                        </label>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- SDXL LoRAs -->
+                {#if sdxlLoras.length > 0}
+                  <div class="global-lora-type-section">
+                    <h4>SDXL LoRAs</h4>
+                    <div class="global-loras-grid">
+                      {#each sdxlLoras as lora}
+                        {@const isSelected = formData.config.features.studio.globalLoras?.sdxl?.includes(lora.id) || false}
+                        <label class="global-lora-checkbox" class:selected={isSelected}>
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected}
+                            on:change={() => toggleGlobalLora('sdxl', lora.id)}
+                          />
+                          <div class="lora-info">
+                            {#if lora.image}
+                              <img src={lora.image} alt={lora.name} class="lora-thumb" />
+                            {/if}
+                            <div class="lora-text">
+                              <span class="lora-name">{lora.name}</span>
+                              {#if lora.trigger}
+                                <span class="lora-trigger">{lora.trigger}</span>
+                              {/if}
+                            </div>
+                          </div>
+                        </label>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                {#if fluxLoras.length === 0 && sdxlLoras.length === 0}
+                  <p class="loras-empty">
+                    No LoRAs available. <a href="/admin/loras" target="_blank">Add LoRAs</a>
+                  </p>
+                {/if}
+              </div>
+            </section>
+
+          <!-- TOOLS TAB -->
+          {:else if activeTab === 'tools'}
+            <section class="details-section">
+              <h3>🛠️ Studio Tools</h3>
+              <p class="section-description">Configure which tools are available in this app</p>
+              
+              <div class="tools-list">
+                {#each AVAILABLE_TOOLS as toolDef}
+                  {@const tool = formData.config.features.studio.tools[toolDef.id]}
+                  {@const isEnabled = tool?.enabled || false}
+                  
+                  <div class="tool-row" class:enabled={isEnabled}>
+                    <div class="tool-header">
+                      <div class="tool-toggle-section">
+                        <input 
+                          type="checkbox" 
+                          checked={isEnabled}
+                          on:change={() => toggleTool(toolDef.id)}
+                          class="tool-checkbox"
+                        />
+                        {#if tool?.thumbnail}
+                          <div 
+                            class="tool-thumbnail editable"
+                            class:drag-over={dragOverToolStates[toolDef.id]}
+                            class:uploading={uploadingToolImages[toolDef.id]}
+                            on:dragover={(e) => handleToolDragOver(e, toolDef.id)}
+                            on:dragleave={(e) => handleToolDragLeave(e, toolDef.id)}
+                            on:drop={(e) => handleToolDrop(e, toolDef.id)}
                           >
-                            Take image from Limn
-                          </button>
+                            {#if uploadingToolImages[toolDef.id]}
+                              <div class="tool-upload-overlay">⏳ Uploading...</div>
+                            {:else}
+                              <div class="tool-image-edit-overlay">
+                                <label class="btn-replace-tool-image">
+                                  📸 Replace
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    style="display: none;"
+                                    on:change={(e) => handleToolFileSelect(e, toolDef.id)}
+                                  />
+                                </label>
+                              </div>
+                            {/if}
+                            <img src={tool.thumbnail} alt={toolDef.name} />
+                          </div>
+                        {:else}
+                          <div 
+                            class="tool-thumbnail tool-thumbnail-placeholder editable"
+                            class:drag-over={dragOverToolStates[toolDef.id]}
+                            class:uploading={uploadingToolImages[toolDef.id]}
+                            on:dragover={(e) => handleToolDragOver(e, toolDef.id)}
+                            on:dragleave={(e) => handleToolDragLeave(e, toolDef.id)}
+                            on:drop={(e) => handleToolDrop(e, toolDef.id)}
+                          >
+                            {#if uploadingToolImages[toolDef.id]}
+                              <div class="tool-upload-overlay">⏳ Uploading...</div>
+                            {:else}
+                              <div class="tool-image-edit-overlay">
+                                <label class="btn-replace-tool-image">
+                                  📸 Add Image
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    style="display: none;"
+                                    on:change={(e) => handleToolFileSelect(e, toolDef.id)}
+                                  />
+                                </label>
+                              </div>
+                              <span>🔧</span>
+                            {/if}
+                          </div>
+                        {/if}
+                        <div class="tool-info">
+                          <span class="tool-name">{toolDef.name}</span>
+                          <span class="tool-id">{toolDef.id}</span>
                         </div>
                       </div>
                     </div>
                     
-                    <div class="tool-settings-options">
-                      <label class="checkbox-label">
-                        <input 
-                          type="checkbox" 
-                          bind:checked={tool.initImage}
-                          on:change={markChanged}
-                        />
-                        <span>Requires Initial Image (tool accepts an input image)</span>
-                      </label>
-                    </div>
-                  </div>
-                  
-                  <!-- LoRA Selection -->
-                  {#if toolDef.loraType}
-                    {@const availableLoras = getLorasForTool(toolDef.id)}
-                    {#if availableLoras.length > 0}
-                      <div class="tool-setting-loras">
-                        <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()}) - Tool-specific overrides</label>
-                        <div class="loras-grid">
-                          {#each availableLoras as lora}
-                            {@const isSelected = isLoraEnabledForTool(toolDef.id, lora.id)}
-                            {@const isGlobal = formData.config.features.studio.globalLoras?.[toolDef.loraType]?.includes(lora.id) || false}
-                            <label class="lora-checkbox" class:selected={isSelected}>
+                    {#if isEnabled && tool}
+                      <div class="tool-settings">
+                        <div class="tool-settings-grid">
+                          <div class="tool-setting">
+                            <label>Display Title</label>
+                            <input 
+                              type="text" 
+                              class="input input-sm" 
+                              bind:value={tool.title}
+                              on:input={markChanged}
+                              placeholder="Tool display name"
+                            />
+                          </div>
+                          <div class="tool-setting">
+                            <label>Thumbnail URL</label>
+                            <div class="thumbnail-url-row">
                               <input 
-                                type="checkbox" 
-                                checked={isSelected}
-                                on:change={() => toggleLoraForTool(toolDef.id, lora.id)}
+                                type="text" 
+                                class="input input-sm" 
+                                bind:value={tool.thumbnail}
+                                on:input={markChanged}
+                                placeholder="https://..."
                               />
-                              <div class="lora-info">
-                                {#if lora.image}
-                                  <img src={lora.image} alt={lora.name} class="lora-thumb" />
-                                {/if}
-                                <div class="lora-text">
-                                  <span class="lora-name">
-                                    {lora.name}
-                                    {#if isGlobal}
-                                      <span class="global-badge" title="Enabled globally">🌍</span>
-                                    {/if}
-                                  </span>
-                                  {#if lora.trigger}
-                                    <span class="lora-trigger">{lora.trigger}</span>
-                                  {/if}
-                                </div>
-                              </div>
-                            </label>
-                          {/each}
+                              <button 
+                                class="btn btn-secondary btn-sm btn-copy-limn"
+                                on:click={() => copyThumbnailFromLimn(toolDef.id)}
+                                title="Copy thumbnail URL from Limn app"
+                              >
+                                Take image from Limn
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div class="tool-settings-options">
+                          <label class="checkbox-label">
+                            <input 
+                              type="checkbox" 
+                              bind:checked={tool.initImage}
+                              on:change={markChanged}
+                            />
+                            <span>Requires Initial Image (tool accepts an input image)</span>
+                          </label>
                         </div>
                       </div>
-                    {:else}
-                      <div class="tool-setting-loras">
-                        <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()})</label>
-                        <p class="loras-empty">
-                          No {(toolDef.loraType || '').toUpperCase()} LoRAs available. 
-                          <a href="/admin/loras" target="_blank">Add LoRAs</a>
-                        </p>
-                      </div>
+                      
+                      <!-- LoRA Selection -->
+                      {#if toolDef.loraType}
+                        {@const availableLoras = getLorasForTool(toolDef.id)}
+                        {#if availableLoras.length > 0}
+                          <div class="tool-setting-loras">
+                            <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()}) - Tool-specific overrides</label>
+                            <div class="loras-grid">
+                              {#each availableLoras as lora}
+                                {@const isSelected = isLoraEnabledForTool(toolDef.id, lora.id)}
+                                {@const isGlobal = formData.config.features.studio.globalLoras?.[toolDef.loraType]?.includes(lora.id) || false}
+                                <label class="lora-checkbox" class:selected={isSelected}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isSelected}
+                                    on:change={() => toggleLoraForTool(toolDef.id, lora.id)}
+                                  />
+                                  <div class="lora-info">
+                                    {#if lora.image}
+                                      <img src={lora.image} alt={lora.name} class="lora-thumb" />
+                                    {/if}
+                                    <div class="lora-text">
+                                      <span class="lora-name">
+                                        {lora.name}
+                                        {#if isGlobal}
+                                          <span class="global-badge" title="Enabled globally">🌍</span>
+                                        {/if}
+                                      </span>
+                                      {#if lora.trigger}
+                                        <span class="lora-trigger">{lora.trigger}</span>
+                                      {/if}
+                                    </div>
+                                  </div>
+                                </label>
+                              {/each}
+                            </div>
+                          </div>
+                        {:else}
+                          <div class="tool-setting-loras">
+                            <label>LoRA Models ({(toolDef.loraType || '').toUpperCase()})</label>
+                            <p class="loras-empty">
+                              No {(toolDef.loraType || '').toUpperCase()} LoRAs available. 
+                              <a href="/admin/loras" target="_blank">Add LoRAs</a>
+                            </p>
+                          </div>
+                        {/if}
+                      {/if}
                     {/if}
-                  {/if}
-                {/if}
+                  </div>
+                {/each}
               </div>
-            {/each}
-          </div>
-        </section>
+            </section>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
@@ -1578,17 +1602,14 @@
   }
 
   .details-content {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 24px;
+    padding: 0;
   }
 
   .details-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 24px;
-    padding-bottom: 20px;
+    padding: 24px 24px 20px;
     border-bottom: 2px solid #e5e7eb;
   }
 
@@ -1614,6 +1635,43 @@
   .header-actions {
     display: flex;
     gap: 12px;
+  }
+
+  /* Tabs */
+  .tab-nav {
+    display: flex;
+    gap: 0;
+    background: white;
+    padding: 0 24px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .tab-btn {
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #6b7280;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .tab-btn:hover {
+    color: #1f2937;
+  }
+
+  .tab-btn.active {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+    font-weight: 600;
+  }
+
+  .tab-content {
+    padding: 24px;
+    max-width: 1200px;
   }
 
   .btn.pulse {
