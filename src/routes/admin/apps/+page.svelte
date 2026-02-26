@@ -34,6 +34,8 @@
   let poolUserCap: number | null = null;
   let poolUserCapPeriod: 'monthly' | 'weekly' | 'daily' = 'monthly';
   let creditAddAmount: number = 0;
+  let targetBalance: number = 0;
+  $: targetBalance = creditPool + creditAddAmount;
 
   // New app form state
   let newAppData = {
@@ -146,8 +148,7 @@
     success = '';
     
     try {
-      // Calculate new credit pool (add if creditAddAmount > 0)
-      const newCreditPool = creditPool + (creditAddAmount > 0 ? creditAddAmount : 0);
+      const newCreditPool = creditPool + creditAddAmount;
 
       const updated = await updateApp(selectedApp.id, {
         name: formData.name,
@@ -776,30 +777,31 @@
               {#if creditMode === 'individual'}
                 <h4>How Individual mode works</h4>
                 <ul>
-                  <li><strong>Each user has their own credit balance</strong> — set by you on the Users page.</li>
-                  <li>When a user generates an image, credits are deducted from their personal balance.</li>
-                  <li>Deduction order: <em>allocated credits</em> are used first, then <em>bonus credits</em>.</li>
-                  <li>When their balance reaches 0, they can no longer generate until you add more.</li>
+                  <li><strong>Each user has their own credit balance</strong> — managed on the Users page. New users start with 1,000 credits by default.</li>
+                  <li>When a user generates an image, credits are deducted from their personal balance. <strong>Credits</strong> (allocated by admin) are used first, then <strong>Bonus credits</strong> (purchased by user).</li>
+                  <li>When their balance reaches 0, they can no longer generate until you add more on the Users page.</li>
                   <li>Users can see their own balance in the header. They cannot see other users' balances.</li>
+                  <li><strong>Reset All Usage</strong> = sets every user's credits and bonus credits to 0. Use with caution.</li>
                 </ul>
               {:else if creditMode === 'pool'}
                 <h4>How Shared Pool mode works</h4>
                 <ul>
-                  <li><strong>All users share one credit pool</strong> — the "Pool Balance" below.</li>
-                  <li>When any user generates, credits are deducted from this shared pool.</li>
+                  <li><strong>Pool Balance</strong> = the total credits available for the whole app. Every generation by any user deducts from this single pool.</li>
                   <li>There is <strong>no per-user limit</strong> — any user can use as many credits as the pool allows.</li>
                   <li>When the pool hits 0, <strong>all users</strong> are blocked from generating.</li>
-                  <li>To refill, add credits using "Add Credits to Pool" below and save.</li>
+                  <li><strong>Set New Balance</strong> = type the exact pool balance you want. <strong>Add / Remove</strong> = adjust by a specific amount.</li>
+                  <li><strong>Reset All Usage</strong> = clears all usage history. The pool balance stays the same.</li>
                 </ul>
               {:else if creditMode === 'pool_capped'}
                 <h4>How Pool with Cap mode works</h4>
                 <ul>
-                  <li><strong>All users share one credit pool</strong>, but each user has a <strong>spending limit per period</strong>.</li>
-                  <li>The "Per-User Cap" (e.g. 2,000) is the maximum credits one user can spend per period (daily/weekly/monthly).</li>
-                  <li>When the period resets (e.g. start of each month), every user's usage counter goes back to 0.</li>
-                  <li>A user is blocked when they hit their cap OR when the pool runs out — whichever comes first.</li>
-                  <li>On the Users page, you can adjust a user's usage within the current period (e.g. give back credits they wasted on a failed generation).</li>
-                  <li>To refill the pool, add credits below and save. The per-user caps are not affected.</li>
+                  <li><strong>Pool Balance</strong> = the total credits available for the whole app. When a user generates, credits are deducted from this shared pool.</li>
+                  <li><strong>Per-User Cap</strong> = the maximum credits one user can spend per period (daily/weekly/monthly). This limits individual users but doesn't change the pool size.</li>
+                  <li><strong>Cap Period</strong> = when the per-user usage counter resets (e.g. start of each month). The pool balance is NOT affected by the reset — only the per-user counters go back to 0.</li>
+                  <li>A user is <strong>blocked</strong> when they hit their cap OR when the pool runs out — whichever comes first.</li>
+                  <li><strong>Set New Balance</strong> = type the exact pool balance you want (e.g. when a client pays you, set it to the new total). <strong>Add / Remove</strong> = adjust the current balance by a specific amount.</li>
+                  <li><strong>Reset All Usage</strong> = resets every user's period usage counter to 0 (pool balance stays the same). Use this if you want to manually give everyone a fresh start mid-period.</li>
+                  <li>On the Users page, you can adjust an individual user's usage within the current period (e.g. refund credits for a failed generation).</li>
                 </ul>
               {/if}
             </div>
@@ -814,7 +816,7 @@
               </div>
             {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.05}
               <div class="pool-alert pool-alert-critical">
-                <strong>Critical: Pool below 5%</strong> — Only {creditPool.toLocaleString()} credits remaining (${(creditPool * 0.01).toFixed(2)}).
+                <strong>Critical: Pool below 5%</strong> — Only {creditPool.toLocaleString()} credits remaining (€{(creditPool * 0.01).toFixed(2)}).
               </div>
             {:else if creditPoolAllocated > 0 && creditPool / creditPoolAllocated < 0.2}
               <div class="pool-alert pool-alert-low">
@@ -831,14 +833,12 @@
                 <div class="credit-stat">
                   <span class="credit-stat-label">Pool Balance</span>
                   <span class="credit-stat-value" class:negative={creditPool < 0}>{creditPool.toLocaleString()}</span>
+                  <span class="credit-stat-sub">Credits available</span>
                 </div>
                 <div class="credit-stat">
-                  <span class="credit-stat-label">Allocated</span>
-                  <span class="credit-stat-value">{creditPoolAllocated.toLocaleString()}</span>
-                </div>
-                <div class="credit-stat">
-                  <span class="credit-stat-label">$ Value</span>
-                  <span class="credit-stat-value">${(creditPool * 0.01).toFixed(2)}</span>
+                  <span class="credit-stat-label">Value</span>
+                  <span class="credit-stat-value">€{(creditPool * 0.01).toFixed(2)}</span>
+                  <span class="credit-stat-sub">1 credit = €0.01</span>
                 </div>
               </div>
 
@@ -849,8 +849,8 @@
                     <input 
                       type="number" 
                       class="input input-sm" 
-                      value={creditPool + creditAddAmount}
-                      on:input={(e) => { creditAddAmount = parseInt(e.currentTarget.value || '0') - creditPool; markChanged(); }}
+                      bind:value={targetBalance}
+                      on:input={() => { creditAddAmount = targetBalance - creditPool; markChanged(); }}
                       placeholder="New balance"
                       min="0"
                       step="100"
@@ -873,10 +873,10 @@
                 {#if creditAddAmount !== 0}
                   <div class="pool-adjust-preview">
                     {creditPool.toLocaleString()} → <strong>{(creditPool + creditAddAmount).toLocaleString()}</strong>
-                    ({creditAddAmount > 0 ? '+' : ''}{creditAddAmount.toLocaleString()} credits, ${((creditPool + creditAddAmount) * 0.01).toFixed(2)})
+                    ({creditAddAmount > 0 ? '+' : ''}{creditAddAmount.toLocaleString()} credits, €{((creditPool + creditAddAmount) * 0.01).toFixed(2)})
                   </div>
                 {/if}
-                <small>1 credit = $0.01 USD. Click "Save Changes" to apply.</small>
+                <small>1 credit = €0.01. Click "Save Changes" to apply.</small>
               </div>
             </div>
           {/if}
@@ -2337,6 +2337,12 @@
     font-weight: 700;
     color: #1f2937;
     font-variant-numeric: tabular-nums;
+  }
+
+  .credit-stat-sub {
+    font-size: 10px;
+    color: #9ca3af;
+    margin-top: 2px;
   }
 
   .credit-stat-value.negative {
