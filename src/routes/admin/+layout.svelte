@@ -80,13 +80,6 @@
             >
               🕐 Scheduler
             </a>
-            <a
-              href="/admin/calculator"
-              class="nav-tab"
-              class:active={currentPath === "/admin/calculator"}
-            >
-              🧮 Calculator
-            </a>
           </nav>
         </div>
         <div class="header-actions">

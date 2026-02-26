@@ -2,10 +2,12 @@
   import { onMount } from 'svelte';
   import {
     getAllPricingConfigs,
+    getAllApps,
     createPricingConfig,
     updatePricingConfig,
     deletePricingConfig,
-    type PricingConfig
+    type PricingConfig,
+    type AppConfig
   } from '$lib/api/client';
   import { createLogger } from '$lib/utils/logger';
   const log = createLogger('pricing');
@@ -17,6 +19,43 @@
   let success = '';
   let showAddModal = false;
   let deleteConfirmId: string | null = null;
+
+  // Calculator state
+  let calcOpen = false;
+  let calcApps: AppConfig[] = [];
+  let calcFixedCosts: Array<{ name: string; amount: number }> = [
+    { name: 'RunPod ComfyUI (GPU)', amount: 300 },
+    { name: 'RunPod Deforum (GPU)', amount: 300 },
+    { name: 'Server / Hosting', amount: 150 }
+  ];
+  let calcProfitTarget = 200;
+  let calcClients: Array<{ name: string; monthlyRevenue: number; creditsAllocated: number; appId: string }> = [
+    { name: 'IFM', monthlyRevenue: 4000, creditsAllocated: 200000, appId: 'ifm' }
+  ];
+  let calcUsage: Record<string, number> = {};
+
+  function calcGetCredits(config: PricingConfig): number {
+    if (config.fixed_credit_override != null && config.fixed_credit_override > 0) return config.fixed_credit_override;
+    return Math.max(1, Math.ceil((config.cost_per_unit_usd * (config.markup_multiplier || 1)) / 0.01));
+  }
+  function calcRevPerUnit(config: PricingConfig): number { return calcGetCredits(config) * 0.01; }
+  function calcMargin(config: PricingConfig): number { return calcRevPerUnit(config) - config.cost_per_unit_usd; }
+
+  $: calcTotalFixed = calcFixedCosts.reduce((s, c) => s + c.amount, 0);
+  $: calcTotalClientRev = calcClients.reduce((s, c) => s + c.monthlyRevenue, 0);
+  $: calcTotalCredits = calcClients.reduce((s, c) => s + c.creditsAllocated, 0);
+  $: calcCreditsValue = calcTotalCredits * 0.01;
+  $: calcUpfront = calcTotalClientRev - calcCreditsValue;
+  $: calcVarRevenue = configs.reduce((s, c) => s + (calcUsage[c.id] || 0) * calcRevPerUnit(c), 0);
+  $: calcVarCost = configs.reduce((s, c) => s + (calcUsage[c.id] || 0) * c.cost_per_unit_usd, 0);
+  $: calcNetProfit = calcTotalClientRev - calcTotalFixed - calcVarCost;
+  $: calcHitsTarget = calcNetProfit >= calcProfitTarget;
+
+  function calcAddCost() { calcFixedCosts = [...calcFixedCosts, { name: '', amount: 0 }]; }
+  function calcRemoveCost(i: number) { calcFixedCosts = calcFixedCosts.filter((_, idx) => idx !== i); }
+  function calcAddClient() { calcClients = [...calcClients, { name: '', monthlyRevenue: 0, creditsAllocated: 0, appId: '' }]; }
+  function calcRemoveClient(i: number) { calcClients = calcClients.filter((_, idx) => idx !== i); }
+  function formatEur(n: number): string { return `€${n.toFixed(2)}`; }
 
   // Track which rows have unsaved changes
   let dirtyIds: string[] = [];
@@ -57,6 +96,15 @@
 
   onMount(async () => {
     await loadConfigs();
+    try {
+      calcApps = await getAllApps();
+    } catch (e) { /* non-critical */ }
+    const defaultUsage: Record<string, number> = {
+      'nano-banana-pro': 100, 'nano-banana-pro-4K': 50, 'comfyui': 200, 'deforum': 2000
+    };
+    for (const c of configs) {
+      calcUsage[c.id] = defaultUsage[c.model] ?? 0;
+    }
   });
 
   /**
@@ -457,6 +505,160 @@
           </div>
         </div>
       {/each}
+    </div>
+  {/if}
+</div>
+
+<!-- Calculator Accordion -->
+<div class="calc-accordion" class:open={calcOpen}>
+  <button class="calc-accordion-toggle" on:click={() => calcOpen = !calcOpen}>
+    <span class="calc-toggle-icon">{calcOpen ? '▾' : '▸'}</span>
+    <span class="calc-toggle-title">🧮 Pricing Calculator</span>
+    <span class="calc-toggle-subtitle">Experiment with costs, revenue & profit</span>
+    {#if calcOpen}
+      <span class="calc-net-badge" class:profit={calcNetProfit >= 0} class:loss={calcNetProfit < 0}>
+        Net: {formatEur(calcNetProfit)}
+      </span>
+    {/if}
+  </button>
+
+  {#if calcOpen}
+    <div class="calc-body">
+      <!-- Summary -->
+      <div class="calc-summary-row">
+        <div class="calc-summary-card">
+          <span class="calc-s-label">Revenue</span>
+          <span class="calc-s-value" style="color:#10b981">{formatEur(calcTotalClientRev)}</span>
+        </div>
+        <div class="calc-summary-card">
+          <span class="calc-s-label">Costs</span>
+          <span class="calc-s-value" style="color:#ef4444">{formatEur(calcTotalFixed + calcVarCost)}</span>
+        </div>
+        <div class="calc-summary-card" style="border-left:3px solid {calcNetProfit >= 0 ? '#10b981' : '#ef4444'}">
+          <span class="calc-s-label">Net Profit</span>
+          <span class="calc-s-value">{formatEur(calcNetProfit)}</span>
+        </div>
+        <div class="calc-summary-card">
+          <span class="calc-s-label">Target</span>
+          <span class="calc-s-value">{formatEur(calcProfitTarget)}</span>
+          <span class="calc-s-sub">{calcHitsTarget ? 'Achieved' : 'Not yet'}</span>
+        </div>
+      </div>
+
+      <div class="calc-two-col">
+        <!-- Fixed Costs -->
+        <div class="calc-panel">
+          <h4>Monthly Fixed Costs</h4>
+          {#each calcFixedCosts as cost, i}
+            <div class="calc-cost-row">
+              <input type="text" class="calc-input" bind:value={cost.name} placeholder="Cost name" />
+              <div class="calc-eur-wrap">
+                <span class="calc-eur">€</span>
+                <input type="number" class="calc-input calc-input-num" bind:value={cost.amount} min="0" step="10" />
+              </div>
+              <button class="calc-rm" on:click={() => calcRemoveCost(i)}>×</button>
+            </div>
+          {/each}
+          <button class="calc-add-btn" on:click={calcAddCost}>+ Add Cost</button>
+          <div class="calc-total-row">
+            <span>Total Fixed</span><strong>{formatEur(calcTotalFixed)}</strong>
+          </div>
+          <div class="calc-target-row">
+            <span>Profit Target</span>
+            <div class="calc-eur-wrap">
+              <span class="calc-eur">€</span>
+              <input type="number" class="calc-input calc-input-num" bind:value={calcProfitTarget} min="0" step="50" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Clients -->
+        <div class="calc-panel">
+          <h4>Client Revenue</h4>
+          {#each calcClients as client, i}
+            <div class="calc-client-card">
+              <div class="calc-client-top">
+                <input type="text" class="calc-input" bind:value={client.name} placeholder="Client" />
+                <select class="calc-input calc-select" bind:value={client.appId}>
+                  <option value="">—</option>
+                  {#each calcApps as app}<option value={app.id}>{app.name}</option>{/each}
+                </select>
+                <button class="calc-rm" on:click={() => calcRemoveClient(i)}>×</button>
+              </div>
+              <div class="calc-client-bottom">
+                <div class="calc-field">
+                  <span class="calc-field-label">Pays</span>
+                  <div class="calc-eur-wrap"><span class="calc-eur">€</span>
+                    <input type="number" class="calc-input calc-input-num" bind:value={client.monthlyRevenue} min="0" step="100" />
+                  </div>
+                </div>
+                <div class="calc-field">
+                  <span class="calc-field-label">Credits</span>
+                  <input type="number" class="calc-input calc-input-num" bind:value={client.creditsAllocated} min="0" step="1000" />
+                </div>
+                <div class="calc-field">
+                  <span class="calc-field-label">Value</span>
+                  <span class="calc-field-val">{formatEur(client.creditsAllocated * 0.01)}</span>
+                </div>
+                <div class="calc-field">
+                  <span class="calc-field-label">You keep</span>
+                  <span class="calc-field-val" style="color:{client.monthlyRevenue - client.creditsAllocated * 0.01 >= 0 ? '#10b981' : '#ef4444'}">
+                    {formatEur(client.monthlyRevenue - client.creditsAllocated * 0.01)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          {/each}
+          <button class="calc-add-btn" on:click={calcAddClient}>+ Add Client</button>
+          <div class="calc-total-row">
+            <span>Total Revenue</span><strong style="color:#10b981">{formatEur(calcTotalClientRev)}</strong>
+          </div>
+          <div class="calc-total-row">
+            <span>Upfront Profit</span><strong style="color:{calcUpfront >= 0 ? '#10b981' : '#ef4444'}">{formatEur(calcUpfront)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-generation table -->
+      <div class="calc-panel" style="margin-top:16px">
+        <h4>Per-Generation Economics</h4>
+        <table class="calc-table">
+          <thead>
+            <tr>
+              <th>Provider</th><th>Model</th><th>Credits</th><th>Our Cost</th><th>We Earn</th><th>Margin</th>
+              <th>Est. Usage/mo</th><th>Revenue</th><th>API Cost</th><th>Profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each configs.filter(c => c.is_active) as config}
+              {@const cr = calcGetCredits(config)}
+              {@const rev = calcRevPerUnit(config)}
+              {@const margin = calcMargin(config)}
+              {@const usage = calcUsage[config.id] || 0}
+              <tr>
+                <td><span class="calc-provider">{config.provider}</span></td>
+                <td><span class="calc-model">{config.display_name || config.model}</span></td>
+                <td class="calc-num">{cr}</td>
+                <td class="calc-num">${config.cost_per_unit_usd.toFixed(4)}</td>
+                <td class="calc-num">{formatEur(rev)}</td>
+                <td class="calc-num" style="color:{margin >= 0 ? '#10b981' : '#ef4444'}">{formatEur(margin)}</td>
+                <td><input type="number" class="calc-input calc-input-sm" bind:value={calcUsage[config.id]} min="0" step="10" /></td>
+                <td class="calc-num" style="color:#10b981">{formatEur(usage * rev)}</td>
+                <td class="calc-num" style="color:#ef4444">{formatEur(usage * config.cost_per_unit_usd)}</td>
+                <td class="calc-num" style="color:{usage * margin >= 0 ? '#10b981' : '#ef4444'}">{formatEur(usage * margin)}</td>
+              </tr>
+            {/each}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="7"><strong>Totals</strong></td>
+              <td class="calc-num"><strong style="color:#10b981">{formatEur(calcVarRevenue)}</strong></td>
+              <td class="calc-num"><strong style="color:#ef4444">{formatEur(calcVarCost)}</strong></td>
+              <td class="calc-num"><strong style="color:{calcVarRevenue - calcVarCost >= 0 ? '#10b981' : '#ef4444'}">{formatEur(calcVarRevenue - calcVarCost)}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   {/if}
 </div>
@@ -1117,6 +1319,207 @@
     margin-top: 8px;
     font-size: 14px;
   }
+
+  /* Calculator Accordion */
+  .calc-accordion {
+    max-width: 1200px;
+    margin: 24px auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    overflow: hidden;
+  }
+
+  .calc-accordion-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+  }
+
+  .calc-accordion-toggle:hover { background: #f9fafb; }
+
+  .calc-toggle-icon { font-size: 14px; color: #6b7280; }
+  .calc-toggle-title { font-size: 16px; font-weight: 600; color: #1f2937; }
+  .calc-toggle-subtitle { font-size: 13px; color: #9ca3af; flex: 1; }
+
+  .calc-net-badge {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .calc-net-badge.profit { background: #d1fae5; color: #065f46; }
+  .calc-net-badge.loss { background: #fee2e2; color: #991b1b; }
+
+  .calc-body {
+    padding: 0 24px 24px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .calc-summary-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 20px 0;
+  }
+
+  .calc-summary-card {
+    padding: 14px;
+    background: #f9fafb;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .calc-s-label { font-size: 11px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.3px; }
+  .calc-s-value { font-size: 22px; font-weight: 700; color: #1f2937; font-variant-numeric: tabular-nums; }
+  .calc-s-sub { font-size: 11px; color: #9ca3af; }
+
+  .calc-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .calc-panel {
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .calc-panel h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 12px;
+  }
+
+  .calc-cost-row, .calc-client-top {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .calc-cost-row .calc-input:first-child,
+  .calc-client-top .calc-input:first-child { flex: 1; }
+
+  .calc-input {
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #1f2937;
+    background: white;
+  }
+
+  .calc-input:focus { outline: none; border-color: #3b82f6; }
+
+  .calc-input-num { width: 90px; padding-left: 22px; }
+  .calc-input-sm { width: 70px; text-align: right; padding: 4px 8px; font-size: 12px; }
+  .calc-select { width: 100px; }
+
+  .calc-eur-wrap { position: relative; display: inline-flex; }
+  .calc-eur { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #6b7280; z-index: 1; }
+
+  .calc-rm {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .calc-rm:hover { background: #fee2e2; color: #dc2626; }
+
+  .calc-add-btn {
+    width: 100%;
+    background: none;
+    border: 1px dashed #d1d5db;
+    border-radius: 6px;
+    padding: 6px;
+    font-size: 12px;
+    color: #6b7280;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  .calc-add-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+
+  .calc-total-row, .calc-target-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+
+  .calc-client-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 10px;
+    background: white;
+    margin-bottom: 8px;
+  }
+
+  .calc-client-bottom {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .calc-field { display: flex; flex-direction: column; gap: 3px; }
+  .calc-field-label { font-size: 10px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.3px; }
+  .calc-field-val { font-size: 14px; font-weight: 700; color: #1f2937; padding: 4px 0; }
+
+  .calc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  .calc-table th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 2px solid #e5e7eb;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    background: white;
+  }
+
+  .calc-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #374151;
+  }
+
+  .calc-table tbody tr:hover { background: white; }
+  .calc-table tfoot { background: #eef2ff; }
+  .calc-table tfoot td { border-top: 2px solid #e5e7eb; border-bottom: none; }
+
+  .calc-num { text-align: right; font-variant-numeric: tabular-nums; font-family: monospace; }
+  .calc-provider { font-size: 11px; font-weight: 600; padding: 2px 6px; background: #f3f4f6; border-radius: 4px; }
+  .calc-model { font-weight: 500; }
 
   /* Responsive */
   @media (max-width: 900px) {
