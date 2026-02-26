@@ -302,6 +302,15 @@ export async function updateApp(appId: string, appData: Partial<Omit<AppConfig, 
 }
 
 /**
+ * Reset all user usage/credits for an app (admin only)
+ */
+export async function resetAppUsage(appId: string): Promise<{ success: boolean; message: string }> {
+  return await fetchWithAuth(`/api/v1/apps/${appId}/reset-usage`, {
+    method: 'POST'
+  });
+}
+
+/**
  * Delete an app (admin only)
  */
 export async function deleteApp(appId: string): Promise<void> {

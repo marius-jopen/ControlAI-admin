@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAllApps, updateApp, createApp, deleteApp, type AppConfig, getAllLoras, type Lora, uploadLoraImage } from '$lib/api/client';
+  import { getAllApps, updateApp, createApp, deleteApp, resetAppUsage, type AppConfig, getAllLoras, type Lora, uploadLoraImage } from '$lib/api/client';
   import { createLogger } from '$lib/utils/logger';
   const log = createLogger('apps');
 
@@ -12,6 +12,8 @@
   let success = '';
   let showCreateModal = false;
   let showDeleteConfirm = false;
+  let showResetConfirm = false;
+  let resetting = false;
   let hasUnsavedChanges = false;
   
   // LoRAs
@@ -841,25 +843,39 @@
               </div>
 
               <div class="credit-pool-topup">
-                <label>Add Credits to Pool</label>
-                <div class="topup-row">
-                  <input 
-                    type="number" 
-                    class="input input-sm" 
-                    bind:value={creditAddAmount}
-                    on:input={markChanged}
-                    placeholder="0"
-                    min="0"
-                    step="100"
-                  />
-                  <span class="topup-preview">
-                    {#if creditAddAmount > 0}
-                      New balance: {(creditPool + creditAddAmount).toLocaleString()} (${((creditPool + creditAddAmount) * 0.01).toFixed(2)})
-                    {:else}
-                      Enter amount to add
-                    {/if}
-                  </span>
+                <div class="pool-adjust-grid">
+                  <div class="pool-adjust-field">
+                    <label>Set New Balance</label>
+                    <input 
+                      type="number" 
+                      class="input input-sm" 
+                      value={creditPool + creditAddAmount}
+                      on:input={(e) => { creditAddAmount = parseInt(e.currentTarget.value || '0') - creditPool; markChanged(); }}
+                      placeholder="New balance"
+                      min="0"
+                      step="100"
+                    />
+                    <small>Type the exact balance you want</small>
+                  </div>
+                  <div class="pool-adjust-field">
+                    <label>Add / Remove</label>
+                    <input 
+                      type="number" 
+                      class="input input-sm" 
+                      bind:value={creditAddAmount}
+                      on:input={markChanged}
+                      placeholder="+/- credits"
+                      step="100"
+                    />
+                    <small>Positive to add, negative to remove</small>
+                  </div>
                 </div>
+                {#if creditAddAmount !== 0}
+                  <div class="pool-adjust-preview">
+                    {creditPool.toLocaleString()} → <strong>{(creditPool + creditAddAmount).toLocaleString()}</strong>
+                    ({creditAddAmount > 0 ? '+' : ''}{creditAddAmount.toLocaleString()} credits, ${((creditPool + creditAddAmount) * 0.01).toFixed(2)})
+                  </div>
+                {/if}
                 <small>1 credit = $0.01 USD. Click "Save Changes" to apply.</small>
               </div>
             </div>
@@ -893,6 +909,51 @@
               </div>
             </div>
           {/if}
+
+          <!-- Reset Usage -->
+          <div class="reset-section">
+            {#if !showResetConfirm}
+              <button class="btn btn-danger-outline" on:click={() => showResetConfirm = true}>
+                Reset All Usage
+              </button>
+              <small>Reset all user credits and usage counters for this app.</small>
+            {:else}
+              <div class="reset-confirm">
+                <p><strong>Are you sure?</strong> This will:</p>
+                <ul>
+                  {#if creditMode === 'individual'}
+                    <li>Set every user's credits and bonus credits to <strong>0</strong></li>
+                  {:else}
+                    <li>Reset every user's period usage counter to <strong>0</strong></li>
+                    <li>Delete all generation charge transactions for this app</li>
+                  {/if}
+                </ul>
+                <p>This action <strong>cannot be undone</strong>.</p>
+                <div class="reset-actions">
+                  <button
+                    class="btn btn-danger"
+                    disabled={resetting}
+                    on:click={async () => {
+                      if (!selectedApp) return;
+                      resetting = true;
+                      try {
+                        await resetAppUsage(selectedApp.id);
+                        success = 'Usage reset successfully for all users.';
+                        showResetConfirm = false;
+                      } catch (err) {
+                        error = err instanceof Error ? err.message : 'Failed to reset usage';
+                      } finally {
+                        resetting = false;
+                      }
+                    }}
+                  >
+                    {resetting ? 'Resetting...' : 'Yes, Reset Everything'}
+                  </button>
+                  <button class="btn btn-secondary" on:click={() => showResetConfirm = false}>Cancel</button>
+                </div>
+              </div>
+            {/if}
+          </div>
 
           <!-- Individual mode info -->
           {#if creditMode === 'individual'}
@@ -2336,6 +2397,117 @@
     background: #fee2e2;
     border: 1px solid #ef4444;
     color: #991b1b;
+  }
+
+  .pool-adjust-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .pool-adjust-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #374151;
+  }
+
+  .pool-adjust-field small {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #9ca3af;
+  }
+
+  .pool-adjust-preview {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    font-size: 13px;
+    color: #0369a1;
+    margin-bottom: 8px;
+  }
+
+  .reset-section {
+    margin-top: 8px;
+    padding: 16px 20px;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    background: #fafafa;
+  }
+
+  .reset-section small {
+    display: block;
+    margin-top: 6px;
+    color: #6b7280;
+    font-size: 12px;
+  }
+
+  .btn-danger-outline {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #dc2626;
+    background: white;
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-danger-outline:hover {
+    background: #fef2f2;
+  }
+
+  .btn-danger {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    background: #dc2626;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .reset-confirm {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #374151;
+  }
+
+  .reset-confirm ul {
+    margin: 6px 0;
+    padding-left: 18px;
+  }
+
+  .reset-confirm li {
+    margin-bottom: 2px;
+  }
+
+  .reset-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
   }
 
   .credit-pool-topup {
